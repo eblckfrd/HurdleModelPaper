@@ -125,6 +125,11 @@ ggplot(data = MN_profiles_10yrs, aes(x = n_dep_inprofile)) +
   geom_histogram(binwidth = 1, fill = "blue", color = "black", alpha = 0.7) +
   theme_minimal()
 
+# Histogram of years included = most recent is 2020, goes back to ~1950 but mostly >1980
+ggplot(data = MN_profiles_10yrs, aes(x = year)) +
+  geom_histogram(binwidth = 1, fill = "blue", color = "black", alpha = 0.7) +
+  theme_minimal()
+
 
 # See how many lakes have n_dep_inprofile values that dont match the lake's max depth: 482 out of 517
 #chose 2m mismatch as arbitrary wiggle room..
@@ -299,9 +304,136 @@ ggplot(unique_lakeIDs, aes(x = longitude, y = latitude, color = lake_maxdepth_m)
     y = "Latitude"
   )
 
+## from MGLP code, this selects the latest profile of the year 
+
+#EndofYear = MN_profiles_10yrs %>%
+  #group_by(link_lagosid, year)%>%
+  #mutate(Max = max(doy))%>%
+  #filter(DOY == Max)%>%
+  #ungroup()
+
 ##North and South investigation -------------------------------------------------
 
-# Perform cluster analysis on rainfall and temp Mesonet data to define north and south regions?
+
+
+# Analysis on rainfall and temp Mesonet data to define north and south regions --------------------------
+# To confirm ecoregion seperation
+
+# NCEI 1991-2020 Climatological Average for Summer (JJA)
+#https://mesonet.agron.iastate.edu/plotting/auto/?_wait=no&q=125&month=summer&sdate=0101&edate=1231&sector=state&src=ncei_climate91&state=MN&opt=both&var=avg_high&cmap=autumn&cmap_r=on&_r=t&dpi=100&_fmt=png
+
+#Load in data
+#MN_precip <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/MN_precip.csv")
+
+MN_precip <- MN_precip %>% 
+  dplyr::select(station, lon, lat, total_precip, avg_high, avg_low, avg_temp, max_years)
+                
+#see where these stations are; filter based on PRECIP
+ggplot(MN_precip, aes(x = lon, y = lat, color = total_precip)) +
+  borders("state", regions = "minnesota", fill = "gray95", colour = "gray70") +
+  geom_point(size = 2, alpha = 0.8) +
+  coord_quickmap(
+    xlim = c(-97.5, -89),
+    ylim = c(43.5, 49.5)
+  ) +
+  scale_color_gradient(
+    name = "Climatological average precipitation total JJA",
+    low = "green",
+    high = "darkblue"
+  ) +
+  theme_minimal() +
+  labs(
+    title = "Minnesota Mesonet Stations",
+    x = "Longitude",
+    y = "Latitude"
+  )
+
+#see where these stations are; filter based on avg high
+ggplot(MN_precip, aes(x = lon, y = lat, color = avg_high)) +
+  borders("state", regions = "minnesota", fill = "gray95", colour = "gray70") +
+  geom_point(size = 2, alpha = 0.8) +
+  coord_quickmap(
+    xlim = c(-97.5, -89),
+    ylim = c(43.5, 49.5)
+  ) +
+  scale_color_gradient(
+    name = "Avg High (F)",
+    low = "red",
+    high = "darkblue"
+  ) +
+  theme_minimal() +
+  labs(
+    title = "Minnesota Mesonet Stations",
+    x = "Longitude",
+    y = "Latitude"
+  )
+
+#see where these stations are; filter based on avg low
+ggplot(MN_precip, aes(x = lon, y = lat, color = avg_low)) +
+  borders("state", regions = "minnesota", fill = "gray95", colour = "gray70") +
+  geom_point(size = 2, alpha = 0.8) +
+  coord_quickmap(
+    xlim = c(-97.5, -89),
+    ylim = c(43.5, 49.5)
+  ) +
+  scale_color_gradient(
+    name = "Avg Low (F)",
+    low = "darkblue",
+    high = "lightblue2"
+  ) +
+  theme_minimal() +
+  labs(
+    title = "Minnesota Mesonet Stations",
+    x = "Longitude",
+    y = "Latitude"
+  )
+
+# now apply k-means clustering to all three variables to see if there is agreeance on ranges
+
+#assign 2 ks so we can split N/S
+
+cluster_data <- MN_precip %>%
+  select(avg_high, avg_low, total_precip) 
+
+scaled_data <- scale(cluster_data)
+
+set.seed(123)  # for reproducibility
+kmeans_result <- kmeans(scaled_data, centers = 2)  # adjust number of clusters as needed
+
+# Add cluster assignments back to your original data
+MN_precip$cluster <- factor(kmeans_result$cluster)
+
+#look at results
+kmeans_result$centers
+
+#Cluster  avg_high  avg_low  total_precip
+#1         0.59      0.63      0.33
+#2        -1.01     -1.07     -0.55
+
+#plot
+ggplot(MN_precip, aes(x = lon, y = lat)) +
+  borders("state", regions = "minnesota", fill = "gray95", color = "grey70") +
+  geom_point(aes(color = cluster), size = 2) +
+  coord_fixed(1.3) +
+  labs(title = "K-means Clustering of Mesonet Stations",
+       color = "Cluster") +
+  theme_minimal()
+
+#elbow method for validation: elbow bend is at 2! validation for seperating N?S
+
+#create vector
+wss <- vector()
+
+for (k in 1:10) {
+  km <- kmeans(scale(cluster_data), centers = k, nstart = 25)
+  wss[k] <- km$tot.withinss
+}
+
+#plot elbow
+plot(1:10, wss, type = "b",
+     xlab = "Number of Clusters K",
+     ylab = "Total Within-Cluster Sum of Squares",
+     main = "Elbow Method for Choosing K")
 
 
 ##LAGOS merge -------------------------------------------------------------
@@ -309,24 +441,23 @@ ggplot(unique_lakeIDs, aes(x = longitude, y = latitude, color = lake_maxdepth_m)
 
 # Filter for MN
 
-# Merge with profile data using LAGOS_ID column
+# Merge with profile data using LAGOS_ID column; use unique_lakeIDs
 
 dataset$column <-merge(dataset,dataset2,by=c("lagoslakeid","year"),all.x=TRUE)
 
 # First I need data so that i can categorize my lakes..
 # Filter columns for: ID, most recent secchi depth, lake connectivity class, elevation, max lake depth
 
-# Look at histogram of depths, then pick thresholds
-  #
+
 
 # From secchi depth, calculate TSI for each lake: 60 - (14.41 * ln(secci #))
 # Look at histogram of TSI to see spread
 # Then assign oligotrophic as <30, and eutrophic as >50 if this makes sense
 
 
-# Assign new columns to table: depth (assign deep or shallow), productivity (oligotrophic or eutrophic), hydrology (seepage or drainage)
+# Assign new columns to table: depth_class (assign deep or shallow), produc_class (oligotrophic or eutrophic), hydro_class (seepage or drainage)
 
 
 
-# Re-merge data with full profiles
+# Re-merge data with full profiles (MN_profiles_10yrs)
 
