@@ -1,5 +1,5 @@
-# Diss Chapter 2 - started June 2025
-# Processing of Minnesota data from Gretchen and Mike
+# Dissertation Chapter 2 - started June 2025
+# Processing of Minnesota data from MGLP team (Mike, Gretchen, Heidi, Leslie)
 
 
 # Load in packages
@@ -13,9 +13,11 @@ library(LAGOSNE)
 library(ggplot2)
 library(ggmap)
 
-# Load in MN_profiles data from shared google drive
 
-#MN_profiles <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/MN_profiles.csv")
+
+# Load in MN_profiles data from Gretchen shared google drive
+
+#FULL_MN_profiles <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/MN_profiles.csv")
 
 # Load in LAGOS data
 #lagosne_get(overwrite = T,dest_folder = LAGOSNE:::lagos_path())
@@ -23,16 +25,58 @@ library(ggmap)
 
 ##Profile data processing ------------------------------------------------------
 
+
 # Only keep columns that are needed
 # Filter for only lakes that stratify-- filter for geom ratio <4
 
-MN_profiles <- MN_profiles %>% #takes data down to 714410 and 15 variables
+MN_profiles <- FULL_MN_profiles %>% #takes data down to 714,410 and 15 variables
   dplyr::select(link_lagosid, year, date, doy, latitude, longitude, 
                 monitoringlocationidentifier, monitoringlocationname,
                 profile_ident, n_dep_inprofile,
                 depth_m, temp_c, do_ppm, lake_geomratio, lake_maxdepth_m, lake_area_m2,
                 flag_do, flag_temp, flag_dep_diff) %>%
   filter(lake_geomratio <= "4") 
+
+#just so i can run the borrowed code below
+MN_profiles <- MN_profiles %>%
+  rename(MonitoringLocationIdentifier = monitoringlocationidentifier)
+
+# Remove Lake Superior Sites, Mines, and Pits ~ We only want Glacial Lakes; from MGLP
+MN_profiles = MN_profiles %>%
+  filter(MonitoringLocationIdentifier != "EPA_GLNPO-SU19") %>% #Lake Superior Site
+  filter(MonitoringLocationIdentifier != "EPA_GLNPO-SU18") %>% #Lake Superior Site
+  filter(MonitoringLocationIdentifier != "EPA_GLNPO-SU104550")%>% #Lake Superior Site
+  filter(MonitoringLocationIdentifier != "21GPBCH-LS_PT_1") %>% #Lake Superior Site
+  filter(MonitoringLocationIdentifier != "21GPBCH-LS_PT_9") %>% #Lake Superior Site
+  filter(MonitoringLocationIdentifier != "GPC5_WQX-LS_PT_1") %>% #Lake Superior Site
+  filter(MonitoringLocationIdentifier != "GPC5_WQX-LS_PT_9") %>% #Lake Superior Site
+  filter(MonitoringLocationIdentifier != "GPC5_WQX-LS_PT_8") %>% #Lake Superior Site
+  filter(MonitoringLocationIdentifier != "MNPCA-69-1297-00-202") %>% #Sherman Pit
+  filter(MonitoringLocationIdentifier != "MNPCA-69-0429-00-201") %>% #Sabin Pit
+  filter(MonitoringLocationIdentifier != "21GPBCH-LS_PT_8") %>%      #Lake Superior Site
+  filter(MonitoringLocationIdentifier != "MNPCA-18-0440-01-100") %>% #Mahnomen Mine
+  filter(MonitoringLocationIdentifier != "MNPCA-69-1297-00-201") %>% #Sherman Pit
+  filter(MonitoringLocationIdentifier != "MNPCA-18-0439-00-100") %>% #Pennington Mine
+  filter(MonitoringLocationIdentifier != "MNPCA-31-1325-04-201") %>% #Canisteo Mine Pit
+  filter(MonitoringLocationIdentifier != "MNPCA-69-1298-00-203") %>% #South Twin City Pit
+  filter(MonitoringLocationIdentifier != "MNPCA-18-0093-01-202") %>% #Rabbit Lake
+  filter(MonitoringLocationIdentifier != "MNPCA-18-0041-01-201") %>% #Crooked Lake - Silver Bay
+  filter(MonitoringLocationIdentifier != "MNPCA-69-0429-00-100") %>% #Embarrass Mine
+  filter(MonitoringLocationIdentifier != "MNPCA-69-0428-00-201") #St. James Pit
+
+  #now switch back name
+MN_profiles <- MN_profiles %>%
+    rename(monitoringlocationidentifier = MonitoringLocationIdentifier)
+
+#filter for min depth: code from MGLP team
+valid_profiles <- MN_profiles %>% #Profiles must have a minimum depth less than 3 meters; 
+  group_by(profile_ident) %>% #otherwise the profiles shallowest read could be in 
+  summarise(min.depth = min(depth_m, na.rm = TRUE)) %>% #the metalimnion and capture none of the epilimnion
+  filter(min.depth < 3) %>% #Jane et al 2021
+  pull(profile_ident)
+
+MN_profiles <- MN_profiles %>%
+  filter(profile_ident %in% valid_profiles)
 
 #look at data
 glimpse(MN_profiles)
@@ -56,6 +100,7 @@ ggplot(data = ten_yrlakes, aes(x = years_sampled)) +
   geom_histogram(binwidth = 1, fill = "blue", color = "black", alpha = 0.7) +
   theme_minimal()
 
+
 #filter MN_profiles dataset for only lakes with >10 yrs of sampling data
 
 MN_profiles_10yrs <- MN_profiles %>%
@@ -75,7 +120,13 @@ ggplot(data = MN_profiles_10yrs, aes(x = month)) +
   geom_histogram(binwidth = 1, fill = "blue", color = "black", alpha = 0.7) +
   theme_minimal()
 
-# See how many lakes have profile_ident values that dont match the lake's max depth: 482 out of 517
+# Histogram of # of depths in profile
+ggplot(data = MN_profiles_10yrs, aes(x = n_dep_inprofile)) +
+  geom_histogram(binwidth = 1, fill = "blue", color = "black", alpha = 0.7) +
+  theme_minimal()
+
+
+# See how many lakes have n_dep_inprofile values that dont match the lake's max depth: 482 out of 517
 #chose 2m mismatch as arbitrary wiggle room..
 
 MN_profiles_10yrs %>%
@@ -119,14 +170,56 @@ length(intersect_lakes)
 
 # How to get down to just one central site per lake? need it like this to be able to bin lakes based on categories...
 
+# from MGLP: we can filter for most sampled site at each lake and use that
+mostsampledsite <- MN_profiles_10yrs %>%
+  group_by(link_lagosid, monitoringlocationidentifier) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(link_lagosid) %>%
+  mutate(MostSampled = max(n)) %>%
+  ungroup() %>%
+  filter(n == MostSampled) %>%
+  distinct(link_lagosid, .keep_all = TRUE)
 
-# Filter for any specific months? Mar-Sep?
+MN_profiles_10yrs <- MN_profiles_10yrs %>%
+  filter(monitoringlocationidentifier %in% mostsampledsite$monitoringlocationidentifier)
 
+#check that this worked (it did!)
+MN_profiles_10yrs %>%
+  group_by(link_lagosid) %>%
+  summarise(n_sites = n_distinct(monitoringlocationidentifier)) %>%
+  filter(n_sites > 1)
 
-# Histogram of how many sampling events per site
+#another check
+MN_profiles_10yrs %>%
+  count(link_lagosid, monitoringlocationidentifier) %>%
+  arrange(desc(n)) %>%
+  head(10)
 
+#now look at this number again; 464
+MN_profiles_10yrs %>%
+  mutate(depth_mismatch = abs(n_dep_inprofile - lake_maxdepth_m) > 2) %>%
+  # Step 2: Group by lake ID
+  group_by(link_lagosid) %>%
+  # Step 3: Summarize if any mismatch exists for the lake
+  summarise(has_mismatch = any(depth_mismatch), .groups = "drop") %>%
+  # Step 4: Count how many lakes have a mismatch
+  summarise(num_lakes_with_mismatch = sum(has_mismatch))
 
-#Filter for any # of events?
+# Histogram of n of samples
+ggplot(data = mostsampledsite, aes(x = n)) +
+  geom_histogram(binwidth = 10, fill = "blue", color = "black", alpha = 0.7) +
+  theme_minimal()
+
+# Filter for any specific months? Mar-Oct, 405700 obs left
+
+MN_profiles_10yrs <- MN_profiles_10yrs %>%
+  filter(month >= 3 & month <= 10)
+
+# Identify lakes with at least one sample during June–September (DOY 152–273)
+#they all fit this criteria so dont need to filter!
+lakes_with_summer_sample <- MN_profiles_10yrs %>%
+  filter(doy >= 152 & doy <= 273) %>%
+  distinct(link_lagosid)
 
 
 # Just take most recent surface sample for each lake in new table, to easily match with LAGOS data
