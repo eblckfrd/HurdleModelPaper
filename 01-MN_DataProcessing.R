@@ -1,7 +1,6 @@
 # Dissertation Chapter 2 - started June 2025
 # Processing of Minnesota data from MGLP team (Mike, Gretchen, Heidi, Leslie)
 
-
 # Load in packages
 
 library(tidyverse)
@@ -13,16 +12,28 @@ library(LAGOSNE)
 library(ggplot2)
 library(ggmap)
 
-
+----------------------------------------------
 
 # Load in MN_profiles data from Gretchen shared google drive
 
 #FULL_MN_profiles <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/MN_profiles.csv")
 
-# Load in LAGOS data
-#lagosne_get(overwrite = T,dest_folder = LAGOSNE:::lagos_path())
+-------------------------------------------------------
 
+# Load in LAGOS data files downloaded from edi; dont end up using all of these
 
+#lakeslimno10873 <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/lakeslimno10873.csv")
+        #lake lat, lon, meandepth, maxdepth
+#LAGOSNE_state_105 <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/LAGOSNE_state_105.csv")
+        #state ID
+#LAGOSNE_lakeslocus101 <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/LAGOSNE_lakeslocus101.csv")
+         #lagos ID, name, lake area, lake perim, hu zones, elevation, stat and county zone id
+#epi_waterquality10873 <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/epi_waterquality10873.csv")
+          #secchi depth, other water quality params
+#lake_characteristics <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/lake_characteristics.csv")
+          #hydrology/lake connectivity
+
+    
 ##Profile data processing ------------------------------------------------------
 
 
@@ -416,7 +427,10 @@ ggplot(MN_precip, aes(x = lon, y = lat)) +
   geom_point(aes(color = cluster), size = 2) +
   coord_fixed(1.3) +
   labs(title = "K-means Clustering of Mesonet Stations",
-       color = "Cluster") +
+       color = "Cluster",
+       x = "Longitude",
+       y = "Latitude"
+       ) +
   theme_minimal()
 
 #elbow method for validation: elbow bend is at 2! validation for seperating N?S
@@ -436,28 +450,252 @@ plot(1:10, wss, type = "b",
      main = "Elbow Method for Choosing K")
 
 
-##LAGOS merge -------------------------------------------------------------
+#am I using this data for my predictors? or just to cluster? 
 
 
-# Filter for MN
+## LAGOS DATA CLEANING -----------------------------------------------------
 
-# Merge with profile data using LAGOS_ID column; use unique_lakeIDs
+#First filter all datasets for MN only = state 14
 
-dataset$column <-merge(dataset,dataset2,by=c("lagoslakeid","year"),all.x=TRUE)
+#might not even need this dataset....
+LAGOSNE_lakeslocus101 <- LAGOSNE_lakeslocus101 %>%
+  filter(state_zoneid == "State_14")
 
+#filter for only lagos lake IDs that we need and select columns needed
+
+epi_waterquality10873 <- epi_waterquality10873 %>%
+  filter(lagoslakeid %in% unique_lakeIDs$link_lagosid) %>% 
+  dplyr::select(lagoslakeid, secchi, sampledate, eventida10873, programid,  chla, colora, doc, nh4, no2, no2no3, srp, tdn, tdp, tkn, tn, tp)
+
+lakeslimno10873 <- lakeslimno10873 %>%
+  filter(lagoslakeid %in% unique_lakeIDs$lagoslakeid)
+
+##LAGOS data processing and category separation -------------------------------------------------------------
+
+#using unique_lakeIDs as my sorting dataset
 # First I need data so that i can categorize my lakes..
-# Filter columns for: ID, most recent secchi depth, lake connectivity class, elevation, max lake depth
 
+#find most recent secchi measurement for each lake in lagos data; 2012 is most recent.............
 
+recent_secchi <- epi_waterquality10873 %>%
+  filter(!is.na(secchi)) %>%
+  group_by(lagoslakeid) %>%
+  slice_max(order_by = sampledate, n = 1) %>%
+  ungroup() %>%
+  select(lagoslakeid, sampledate, secchi)
 
-# From secchi depth, calculate TSI for each lake: 60 - (14.41 * ln(secci #))
+#rename link_lagosid to lagoslakeid so i can merge with LAGOS datasets
+
+unique_lakeIDs <- unique_lakeIDs %>%
+  rename(lagoslakeid = link_lagosid)
+
+#now merge in secchi depth using lagoslakeid
+unique_lakeIDs <- unique_lakeIDs %>%
+  left_join(recent_secchi %>% select(lagoslakeid, secchi), by = "lagoslakeid")
+
+# From secchi depth, calculate TSI for each lake: 60 - (14.41 * ln(secci #)) and put in new column
+
+unique_lakeIDs <- unique_lakeIDs %>%
+  mutate(TSI = 60 - (14.41 * log(secchi)))
+
+#remove any nan or inf, takes us down to 500 lakes
+unique_lakeIDs <- unique_lakeIDs %>%
+  filter(is.finite(TSI))
+
 # Look at histogram of TSI to see spread
-# Then assign oligotrophic as <30, and eutrophic as >50 if this makes sense
+
+ggplot(unique_lakeIDs, aes(x = TSI)) +
+  geom_histogram(binwidth = 2, color = "black", fill = "skyblue")+
+  theme_minimal()
+
+# Then assign oligotrophic as <40, and eutrophic as >50 if this makes sense; based on carlson TSI classification
+
+unique_lakeIDs <- unique_lakeIDs %>%
+  mutate(trophic_state = case_when(
+    TSI < 40 ~ "Oligotrophic",
+    TSI > 50 ~ "Eutrophic",
+    TRUE ~ "Mesotrophic" 
+  ))
+
+#see how many is in each column
+table(unique_lakeIDs$trophic_state)
+
+#Eutrophic  Mesotrophic Oligotrophic 
+#202          194          104
 
 
-# Assign new columns to table: depth_class (assign deep or shallow), produc_class (oligotrophic or eutrophic), hydro_class (seepage or drainage)
+#color histogram by trophic state
+ggplot(unique_lakeIDs, aes(x = TSI, fill = trophic_state)) +
+  geom_histogram(binwidth = 2, color = "black", position = "identity", alpha = 0.7) +
+  labs(title = "Histogram of TSI by Trophic State",
+       x = "Trophic State Index (TSI)",
+       y = "Number of Lakes",
+       fill = "Trophic State") +
+  scale_fill_manual(values = c("Oligotrophic" = "skyblue", "Eutrophic" = "forestgreen")) +
+  theme_minimal()
+
+#color on map by trophic state; dont include mesotrophic lakes
+
+ggplot(unique_lakeIDs %>% filter(trophic_state != "Mesotrophic"),
+       aes(x = longitude, y = latitude, color = trophic_state)) +
+  borders("state", regions = "minnesota", fill = "gray95", colour = "gray70") +
+  geom_point(size = 2, alpha = 0.8) +
+  coord_quickmap(
+    xlim = c(-97.5, -89),
+    ylim = c(43.5, 49.5)
+  ) +
+  scale_color_manual(
+    name = "Trophic State",
+    values = c("Oligotrophic" = "skyblue", "Eutrophic" = "forestgreen")
+  ) +
+  theme_minimal() +
+  labs(
+    title = "Minnesota Lakes Trophic State",
+    x = "Longitude",
+    y = "Latitude"
+  )
+
+#even though mean depth might be a better depth separator, but only have max depth available through LAGOS and profiles dataset
+
+#use 33% quantiles as shallow and deep cutoffs
+#this aligns with <10m or less being shallow for stratifying lakes
+
+mean_depth <- mean(unique_lakeIDs$lake_maxdepth_m, na.rm = TRUE) #14.6
+sd_depth <- sd(unique_lakeIDs$lake_maxdepth_m, na.rm = TRUE) #9.6
+
+cutoffs <- quantile(unique_lakeIDs$lake_maxdepth_m, probs = c(0.33, 0.66), na.rm = TRUE)
+
+shallow_cut <- cutoffs[1]
+deep_cut <- cutoffs[2]
+
+# Classify lakes
+unique_lakeIDs <- unique_lakeIDs %>%
+  mutate(depth_category = case_when(
+    lake_maxdepth_m < shallow_cut ~ "Shallow",
+    lake_maxdepth_m > deep_cut ~ "Deep",
+    TRUE ~ "Medium"  
+  ))
+
+#plot
+ggplot(unique_lakeIDs, aes(x = lake_maxdepth_m)) +
+  geom_histogram(binwidth = 2, color = "black", fill = "skyblue") +
+  geom_vline(xintercept = shallow_cut, color = "red", linetype = "dashed", size = 1) +
+  geom_vline(xintercept = deep_cut, color = "red", linetype = "dashed", size = 1) +
+  labs(title = "Histogram of Lake Max Depth with Quantile-Based Cutoffs",
+       x = "Max Depth (m)",
+       y = "Number of Lakes") +
+  theme_minimal()
+
+#see how many is in each column
+table(unique_lakeIDs$depth_category)
+
+#  Deep  Medium Shallow 
+#170     165     165 
+
+#count categories; there is some crossover, but not entirely split up
+unique_lakeIDs %>%
+  count(trophic_state, depth_category)
+
+#1 Eutrophic     Deep             21
+# Eutrophic     Medium            69
+# Eutrophic     Shallow          112
+
+# Oligotrophic  Deep              62
+# Oligotrophic  Medium            29
+# Oligotrophic  Shallow           13
 
 
+#now for hydrology category, seepage (or "isolated" vs. drainage)
 
-# Re-merge data with full profiles (MN_profiles_10yrs)
+#from LAGOS dataset: 
+#lake_connectivity_permanent = hydrologic connectivity class of the focal lake determined from the NHD network considering only permanent flow
+
+#filted by only unique_lakeIDs lagos numbers
+lake_characteristics <- lake_characteristics %>%
+  filter(lagoslakeid %in% unique_lakeIDs$lagoslakeid)
+
+#see how many is in each hydro column
+table(lake_characteristics$lake_connectivity_permanent)
+
+#Drainage DrainageLk  Headwater   Isolated   Terminal TerminalLk 
+#62        213         62        144         13          6
+
+
+#I AM DECIDING TO ONLY USE PERMANENT FLOW.... NOT CONSIDERING BOTH PERMAMENT AND INTERMITTENT-EPHERMERAL FLOW --------
+
+#see how many is in each hydro column
+table(lake_characteristics$lake_connectivity_fluctuates)
+
+#N   Y 
+#430  70
+
+
+#see how many is in each hydro column
+table(lake_characteristics$lake_connectivity_class)
+
+#Drainage DrainageLk  Headwater   Isolated   Terminal TerminalLk 
+#74        245         47        121         10          3 
+
+
+#code definitions ------
+#drainage: lake with inlets and outlets; no upstream lakes greater than or equal to 10 ha
+#drainagelk: lake with inlets and outlets; has upstream lakes greater than or equal to 10 ha
+#isolated: lake with neither an inlet or an outlet
+
+#so i am going to combine drainage and drainagelk into one category? to get seepage vs. drainage
+
+#merge in connectivity column
+
+#now merge  using lagoslakeid
+unique_lakeIDs <- unique_lakeIDs %>%
+  left_join(lake_characteristics %>% select(lagoslakeid, lake_connectivity_permanent), by = "lagoslakeid")
+
+#assign categories
+unique_lakeIDs <- unique_lakeIDs %>%
+  mutate(hydro_category = case_when(
+    lake_connectivity_permanent == "Isolated" ~ "Seepage",
+    lake_connectivity_permanent == "Drainage" ~ "Drainage",
+    lake_connectivity_permanent == "DrainageLk" ~ "Drainage",
+    TRUE ~ "Other" 
+  ))
+
+#see how many is in each column
+table(unique_lakeIDs$hydro_category)
+
+#Drainage    Other  Seepage 
+#275       81      144 
+
+#now assign north and south based on "K-means Clustering of Mesonet Stations" figure, 46 LAT looks like good divider
+
+unique_lakeIDs <- unique_lakeIDs %>%
+  mutate(geo_position = if_else(latitude > 46, "North", "South"))
+
+#see how many is in each column
+table(unique_lakeIDs$geo_position)
+
+#North South 
+#186   313
+
+#map this to see if it seperated well
+
+ggplot(unique_lakeIDs) +
+  aes(x = longitude, y = latitude, color = geo_position) +
+  borders("state", regions = "minnesota", fill = "gray95", colour = "gray70") +
+  geom_point(size = 2, alpha = 0.8) +
+  coord_quickmap(
+    xlim = c(-97.5, -89),
+    ylim = c(43.5, 49.5)
+  ) +
+  scale_color_manual(
+    name = "Trophic State",
+    values = c("North" = "skyblue", "South" = "red3")
+  ) +
+  theme_minimal() +
+  labs(
+    title = "Minnesota Lakes Split North/South",
+    x = "Longitude",
+    y = "Latitude"
+  )
+
+
 
