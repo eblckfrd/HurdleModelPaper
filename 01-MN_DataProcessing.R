@@ -1,5 +1,7 @@
-# Dissertation Chapter 2 - started June 2025
+# Dissertation Chapter 2 - MINNESOTA - started June 2025
 # Processing of Minnesota data from MGLP team (Mike, Gretchen, Heidi, Leslie)
+# Processing LAGOS data
+# Gathering and cleaning all other predictor data
 
 # Load in packages
 
@@ -21,15 +23,13 @@ library(ggmap)
 -------------------------------------------------------
 
 # Load in LAGOS data files downloaded from edi; dont end up using all of these
+  #was originally using LAGOS-NE data but it is less up to date than LAGOS-US
+  #so for water quality I can pull full country then filter to just my selected lakes
 
-#lakeslimno10873 <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/lakeslimno10873.csv")
-        #lake lat, lon, meandepth, maxdepth
 #LAGOSNE_state_105 <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/LAGOSNE_state_105.csv")
-        #state ID
+        #state IDs
 #LAGOSNE_lakeslocus101 <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/LAGOSNE_lakeslocus101.csv")
          #lagos ID, name, lake area, lake perim, hu zones, elevation, stat and county zone id
-#epi_waterquality10873 <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/epi_waterquality10873.csv")
-          #secchi depth, other water quality params
 #lake_characteristics <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/lake_characteristics.csv")
           #hydrology/lake connectivity
 
@@ -141,6 +141,10 @@ ggplot(data = MN_profiles_10yrs, aes(x = year)) +
   geom_histogram(binwidth = 1, fill = "blue", color = "black", alpha = 0.7) +
   theme_minimal()
 
+# trim data to only include 1980-2020, to standardize years of predictors
+MN_profiles_10yrs <- MN_profiles_10yrs %>%
+  filter(year >= 1980 & year <= 2020)
+
 
 # See how many lakes have n_dep_inprofile values that dont match the lake's max depth: 482 out of 517
 #chose 2m mismatch as arbitrary wiggle room..
@@ -231,12 +235,36 @@ ggplot(data = mostsampledsite, aes(x = n)) +
 MN_profiles_10yrs <- MN_profiles_10yrs %>%
   filter(month >= 3 & month <= 10)
 
-# Identify lakes with at least one sample during June–September (DOY 152–273)
-#they all fit this criteria so dont need to filter!
+# Identify lakes with at least one sample during July–September (DOY 182–273)
+#3 lakes dont fit this requirement.. only 498 lakes
 lakes_with_summer_sample <- MN_profiles_10yrs %>%
-  filter(doy >= 152 & doy <= 273) %>%
+  filter(doy >= 182 & doy <= 273) %>%
   distinct(link_lagosid)
 
+#do the same with spring sample April-June (91-181)
+#only 497 lakes..
+lakes_with_spring_sample <- MN_profiles_10yrs %>%
+  filter(doy >= 91 & doy <= 181) %>%
+  distinct(link_lagosid)
+
+#find which lakes have at least one spring and one summer sample
+lakes_with_both <- intersect(
+  lakes_with_spring_sample$link_lagosid,
+  lakes_with_summer_sample$link_lagosid
+)
+
+# Confirm how many lakes remain
+length(lakes_with_both)
+
+#view lakes, #71996, 1834, 2255
+excluded_lakes <- setdiff(unique(MN_profiles_10yrs$link_lagosid), lakes_with_both)
+
+#these are their names: Swenson Lake, Nest Lake, Star Lake
+
+
+#filter dataset to remove those lakes
+MN_profiles_10yrs <- MN_profiles_10yrs %>%
+  filter(link_lagosid %in% lakes_with_both)
 
 # Just take most recent surface sample for each lake in new table, to easily match with LAGOS data
 #look at only lake IDs, lat, lon, lake_maxdepth_m, lake_area_m2
@@ -315,16 +343,71 @@ ggplot(unique_lakeIDs, aes(x = longitude, y = latitude, color = lake_maxdepth_m)
     y = "Latitude"
   )
 
-## from MGLP code, this selects the latest profile of the year 
+## from MGLP code, this selects the latest profile of the year; may be of use later?
 
-#EndofYear = MN_profiles_10yrs %>%
-  #group_by(link_lagosid, year)%>%
-  #mutate(Max = max(doy))%>%
-  #filter(DOY == Max)%>%
-  #ungroup()
+EndofYear = MN_profiles_10yrs %>%
+  group_by(link_lagosid, year)%>%
+  mutate(Max = max(doy))%>%
+  filter(doy == Max)%>%
+  ungroup()
 
-##North and South investigation -------------------------------------------------
+#finally... create new profiles data with only the lake ideas narrowed down in the unique_lakeIDs dataset
 
+MN_selected_profiles <- MN_profiles_10yrs %>%
+  filter(link_lagosid %in% unique_lakeIDs$lagoslakeid)
+
+#check that this worked; it did! 495 lakes included!
+n_distinct(MN_selected_profiles$link_lagosid)
+
+#do I need only lakes that have consecutive sampling?
+lake_years <- MN_selected_profiles %>%
+  distinct(link_lagosid, year) %>%
+  arrange(link_lagosid, year)
+
+#sort
+lakes_with_consec_10ish <- lake_years %>%
+  group_by(link_lagosid) %>%
+  summarise(sample_years = list(sort(unique(year))), .groups = "drop") %>%
+  rowwise() %>%
+  mutate(has_consec_block = {
+    years <- sample_years
+    found <- FALSE
+    if (length(years) >= 10) {
+      for (i in 1:(length(years) - 9)) {
+        window <- years[i:(i + 9)]
+        if (max(window) - min(window) <= 13) {  # Allow up to 1–2 year gaps
+          found <- TRUE
+          break
+        }
+      }
+    }
+    found
+  }) %>%
+  filter(has_consec_block) %>%
+  select(link_lagosid)
+
+#see all streaks
+lake_streaks <- lake_years %>%
+  group_by(link_lagosid) %>%
+  mutate(streak_id = year - row_number()) %>%
+  group_by(link_lagosid, streak_id) %>%
+  summarise(
+    streak_length = n(),
+    min_year = min(year),
+    max_year = max(year),
+    .groups = "drop"
+  )
+
+#identify the longest streak for each year
+longest_streaks <- lake_streaks %>%
+  group_by(link_lagosid) %>%
+  slice_max(order_by = streak_length, n = 1, with_ties = FALSE) %>%
+  ungroup()
+
+#histogram
+ggplot(data = longest_streaks, aes(x = streak_length)) +
+  geom_histogram(binwidth = 2, fill = "blue", color = "black", alpha = 0.7) +
+  theme_minimal()
 
 
 # Analysis on rainfall and temp Mesonet data to define north and south regions --------------------------
@@ -399,7 +482,8 @@ ggplot(MN_precip, aes(x = lon, y = lat, color = avg_low)) +
     y = "Latitude"
   )
 
-# now apply k-means clustering to all three variables to see if there is agreeance on ranges
+# now apply k-means clustering -----------------------------------------------------------
+#to all three variables to see if there is agreeance on ranges
 
 #assign 2 ks so we can split N/S
 
@@ -453,7 +537,7 @@ plot(1:10, wss, type = "b",
 #am I using this data for my predictors? or just to cluster? 
 
 
-## LAGOS DATA CLEANING -----------------------------------------------------
+## LAGOS DATA CLEANING -----------------------------------------------------------
 
 #First filter all datasets for MN only = state 14
 
@@ -476,6 +560,7 @@ lakeslimno10873 <- lakeslimno10873 %>%
 # First I need data so that i can categorize my lakes..
 
 #find most recent secchi measurement for each lake in lagos data; 2012 is most recent.............
+#first used LAGOS-NE data for this but it only went to 2012, went back and switched out for LAGOS-US data
 
 recent_secchi <- epi_waterquality10873 %>%
   filter(!is.na(secchi)) %>%
@@ -590,17 +675,17 @@ ggplot(unique_lakeIDs, aes(x = lake_maxdepth_m)) +
 table(unique_lakeIDs$depth_category)
 
 #  Deep  Medium Shallow 
-#170     165     165 
+#168     163     164 
 
 #count categories; there is some crossover, but not entirely split up
 unique_lakeIDs %>%
   count(trophic_state, depth_category)
 
 #1 Eutrophic     Deep             21
-# Eutrophic     Medium            69
-# Eutrophic     Shallow          112
+# Eutrophic     Medium            67
+# Eutrophic     Shallow          111
 
-# Oligotrophic  Deep              62
+# Oligotrophic  Deep              60
 # Oligotrophic  Medium            29
 # Oligotrophic  Shallow           13
 
@@ -618,17 +703,16 @@ lake_characteristics <- lake_characteristics %>%
 table(lake_characteristics$lake_connectivity_permanent)
 
 #Drainage DrainageLk  Headwater   Isolated   Terminal TerminalLk 
-#62        213         62        144         13          6
+#62        209         62        143         13          6
 
 
-#I AM DECIDING TO ONLY USE PERMANENT FLOW.... NOT CONSIDERING BOTH PERMAMENT AND INTERMITTENT-EPHERMERAL FLOW --------
+#I AM DECIDING TO ONLY USE PERMANENT FLOW.... NOT CONSIDERING BOTH PERMAMENT AND INTERMITTENT-EPHERMERAL FLOW -------
 
 #see how many is in each hydro column
 table(lake_characteristics$lake_connectivity_fluctuates)
 
 #N   Y 
 #430  70
-
 
 #see how many is in each hydro column
 table(lake_characteristics$lake_connectivity_class)
@@ -637,7 +721,8 @@ table(lake_characteristics$lake_connectivity_class)
 #74        245         47        121         10          3 
 
 
-#code definitions ------
+
+#code definitions --
 #drainage: lake with inlets and outlets; no upstream lakes greater than or equal to 10 ha
 #drainagelk: lake with inlets and outlets; has upstream lakes greater than or equal to 10 ha
 #isolated: lake with neither an inlet or an outlet
@@ -663,7 +748,7 @@ unique_lakeIDs <- unique_lakeIDs %>%
 table(unique_lakeIDs$hydro_category)
 
 #Drainage    Other  Seepage 
-#275       81      144 
+#271       81      143 
 
 #now assign north and south based on "K-means Clustering of Mesonet Stations" figure, 46 LAT looks like good divider
 
@@ -674,9 +759,9 @@ unique_lakeIDs <- unique_lakeIDs %>%
 table(unique_lakeIDs$geo_position)
 
 #North South 
-#186   313
+#182   312
 
-#map this to see if it seperated well
+#map this to see if it separated well
 
 ggplot(unique_lakeIDs) +
   aes(x = longitude, y = latitude, color = geo_position) +
@@ -696,6 +781,23 @@ ggplot(unique_lakeIDs) +
     x = "Longitude",
     y = "Latitude"
   )
+
+# Download and process predictors for MN ----------------------------------------------------
+
+#predictors needed for all years: ice-on time, surface water temp, water level, secchi depth, no2no3, tp, doc
+
+#PAR, surface wind speed, air temp, precip, ENSO, PDO, NAM, geopotential height 500
+
+
+
+
+
+# Calculate VHT for selected lake profiles --------------------------------------------
+
+#preseason AND concurrent
+
+
+
 
 
 
