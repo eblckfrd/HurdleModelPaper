@@ -889,7 +889,8 @@ p4 <- ggplot(unique_lakeIDs %>% filter(hydro_category != "Other"),
 #combine
 grid.arrange(p1, p2, p3, p4, ncol = 2)
 
-# Download and process predictors for MN ------------------------------------------------------------
+
+# calculate WATER QUALITY PREDICTORS ------------------------------------------------------------
 
 #filter LAGOS-NE data for only my unique lakes
 epi_waterquality10873 <- epi_waterquality10873 %>%
@@ -1008,23 +1009,268 @@ LAGOSwaterquality <- LAGOSwaterquality %>%
 
 #now i need to average within months to create pre-season and concurrent predictors...
 
-#try may-june, june
+
+#### STARTING TO FORM PREDICTOR DATA TABLES ---------------------------------------------
+
+##reminder: its okay if a lake doesnt have profile for a year, but predictors must be able to match all profile years available
+
+#try may-june AND june for pre-season predictors
+preseason_waterq_predictors <- LAGOSwaterquality %>%
+  filter(month %in% c(5, 6)) %>%  # only keep May and June
+  group_by(lagoslakeid, year) %>%
+  summarise(
+    chla_mayjune = mean(chla_ugl, na.rm = TRUE),
+    chla_june    = mean(chla_ugl[month == 6], na.rm = TRUE),
+    
+    tp_mayjune   = mean(tp_ugl, na.rm = TRUE),
+    tp_june      = mean(tp_ugl[month == 6], na.rm = TRUE),
+    
+    secchi_mayjune = mean(secchi_m, na.rm = TRUE),
+    secchi_june    = mean(secchi_m[month == 6], na.rm = TRUE),
+    
+    wtemp_mayjune   = mean(surface_temp_c, na.rm = TRUE),
+    wtemp_june      = mean(surface_temp_c[month == 6], na.rm = TRUE),
+    
+    .groups = "drop"
+  )
+
+#there are a lot of NaNs here... 39,619
+sum(is.nan(as.matrix(preseason_waterq_predictors)))
+
+#see which columns they are mostly in: 
+sapply(preseason_waterq_predictors, function(x) sum(is.nan(x)))
+
+#chla_mayjune chla_june     tp_mayjune    tp_june   secchi_mayjune    secchi_june  wtemp_mayjune    wtemp_june
+#4416           4781           8257       8511            144             432           6409            6669 
+
+## TRIM down to only year for each lake that have profiles in MN_selectedprofiles
+preseason_waterq_predictors <- preseason_waterq_predictors %>%
+  semi_join(
+    MN_selected_profiles %>% distinct(lagoslakeid = link_lagosid, year),
+    by = c("lagoslakeid", "year")
+  )
 
 #try july-aug-sep, and just aug
+concurrent_waterq_predictors <- LAGOSwaterquality %>%
+  filter(month %in% c(7, 8, 9)) %>%  # only keep May and June
+  group_by(lagoslakeid, year) %>%
+  summarise(
+    chla_JAS = mean(chla_ugl, na.rm = TRUE),
+    chla_aug    = mean(chla_ugl[month == 8], na.rm = TRUE),
+    
+    tp_JAS   = mean(tp_ugl, na.rm = TRUE),
+    tp_aug      = mean(tp_ugl[month == 8], na.rm = TRUE),
+    
+    secchi_JAS = mean(secchi_m, na.rm = TRUE),
+    secchi_aug    = mean(secchi_m[month == 8], na.rm = TRUE),
+    
+    wtemp_JAS   = mean(surface_temp_c, na.rm = TRUE),
+    wtemp_aug      = mean(surface_temp_c[month == 8], na.rm = TRUE),
+    
+    .groups = "drop"
+  )
 
-waterquality_predictors 
+#counts NaNs.. 41,223
+sum(is.nan(as.matrix(concurrent_waterq_predictors))) 
 
+#see which columns they are mostly in: 
+sapply(concurrent_waterq_predictors, function(x) sum(is.nan(x)))
+
+#chla_JAS   chla_aug    tp_JAS      tp_aug    secchi_JAS  secchi_aug   wtemp_JAS   wtemp_aug 
+#4451        5065        8461        8848         128         669        6570        7031
+
+## TRIM down to only year for each lake that have profiles in MN_selectedprofiles
+concurrent_waterq_predictors <- concurrent_waterq_predictors %>%
+  semi_join(
+    MN_selected_profiles %>% distinct(lagoslakeid = link_lagosid, year),
+    by = c("lagoslakeid", "year")
+  )
+
+#should i try to fill the NaNs? 
 
 
 #predictors needed for all years: ice-on time, water level
 
+#try calculating thermocline depth? to use as a predictor?
+
+
+# Calculate CLIMATE PREDICTORS -----------------------------------------------------------------------------------------
 
 #PAR, surface wind speed, air temp, precip, ENSO, PDO, NAM, geopotential height 500
 
+#look back at mesonet data?
+#PRISM data?
 
-# Calculate VHT for selected lake profiles --------------------------------------------
+#PDO index ----
+#PDO_index <- read.table("~/Desktop/Research/Data/Climate Index Data/PDO_index.txt", header = TRUE, sep = "", dec = ".")
 
-#preseason AND concurrent
+#may-june average
+PDO_index <- PDO_index %>%
+  mutate(MJ_Avg = rowMeans(select(., May, Jun), na.rm = TRUE))
+
+#JAS
+PDO_index <- PDO_index %>%
+  mutate(JAS_Avg = rowMeans(select(., Jul, Aug, Sep), na.rm = TRUE))
+
+#add all to full predictor datasets
+preseason_predictors <- preseason_waterq_predictors %>%
+  left_join(PDO_index %>% select(Year, Jun, MJ_Avg), 
+            by = c("year" = "Year")) %>%
+  rename(PDO_June = Jun, PDO_MJ = MJ_Avg)
+
+concurrent_predictors <- concurrent_waterq_predictors %>%
+  left_join(PDO_index %>% select(Year, Jul, JAS_Avg), 
+            by = c("year" = "Year")) %>%
+  rename(PDO_Jul = Jul, PDO_JAS = JAS_Avg)
+
+#NAM/AO index -------
+#AO_index <- read.table("~/Desktop/Research/Data/Climate Index Data/AO_index.txt", header = TRUE, sep = "", dec = ".")
+
+#may-june average
+AO_index <- AO_index %>%
+  mutate(MJ_Avg = rowMeans(select(., May, Jun), na.rm = TRUE))
+
+#JAS
+AO_index <- AO_index %>%
+  mutate(JAS_Avg = rowMeans(select(., Jul, Aug, Sep), na.rm = TRUE))
+
+#add all to full predictor datasets
+preseason_predictors <- preseason_predictors %>%
+  left_join(AO_index %>% select(Year, Jun, MJ_Avg), 
+            by = c("year" = "Year")) %>%
+  rename(AO_June = Jun, AO_MJ = MJ_Avg)
+
+concurrent_predictors <- concurrent_predictors %>%
+  left_join(AO_index %>% select(Year, Jul, JAS_Avg), 
+            by = c("year" = "Year")) %>%
+  rename(AO_Jul = Jul, AO_JAS = JAS_Avg)
+
+
+#ENSO index -----
+#which one?
+
+#PNA index
+
+
+
+
+
+# Calculate VHT for selected lake profiles ----------------------------------------------------------------------------------------
+
+#calculate VHT function -------------
+
+#Minnesota: based on TDO3… so 3mg/L and 21.5 C
+#from MDNR water quality standard guide
+
+#first take a subset of lakes to apply it to and make sure this code is working accurately
+
+first_five_lakes <- MN_selected_profiles %>%
+  distinct(link_lagosid) %>%
+  slice(1:5)
+
+firstfive_lakedata <- MN_selected_profiles %>%
+  filter(link_lagosid %in% first_five_lakes$link_lagosid) %>%
+  dplyr::select(link_lagosid, date, month, year, depth_m, temp_c, do_ppm, lake_maxdepth_m)
+
+
+# Calculate VHT components for each lake profile
+firstfive_lakedata <- firstfive_lakedata %>%
+  # Group by lake and sample date to work with each profile separately
+  group_by(link_lagosid, date, month, year) %>%
+  arrange(link_lagosid, date, depth_m) %>%
+  
+  # Calculate temp_depth: first depth where temp_c <= 22
+  mutate(
+    temp_depth = {
+      temp_indices <- which(temp_c <= 22)
+      if (length(temp_indices) == 0) {
+        0
+      } else {
+        depth_m[temp_indices[1]]
+      }
+    }
+  ) %>%
+  
+  # Calculate o2_depth: first depth where do_ppm <= 4
+  mutate(
+    o2_depth = {
+      o2_indices <- which(do_ppm <= 4)
+      if (length(o2_indices) == 0) {
+        first(lake_maxdepth_m)
+      } else {
+        depth_m[o2_indices[1]]
+      }
+    }
+  ) %>%
+  
+  # Calculate VHT (assuming it's the difference between o2_depth and temp_depth)
+  mutate(
+    VHT = pmax(0, o2_depth - temp_depth)  # Ensure VHT is not negative
+  ) %>%
+  
+  ungroup()
+
+#check summary of results
+summary(firstfive_lakedata[c("temp_depth", "o2_depth", "VHT")])
+
+#temp_depth       o2_depth          VHT       
+#Min.   : 0.00   Min.   : 3.96   Min.   : 0.00  
+#1st Qu.: 0.18   1st Qu.:12.98   1st Qu.:10.01  
+#Median : 0.45   Median :21.92   Median :18.00  
+#Mean   : 2.51   Mean   :18.81   Mean   :16.35  
+#3rd Qu.: 4.05   3rd Qu.:24.01   3rd Qu.:21.90  
+#Max.   :15.94   Max.   :28.95   Max.   :28.92
+
+#simplify
+profile_summary <- firstfive_lakedata %>%
+  group_by(link_lagosid, date, month, year) %>%
+  summarise(
+    temp_depth = first(temp_depth),
+    o2_depth = first(o2_depth),
+    VHT = first(VHT),
+    max_depth_sampled = max(depth_m, na.rm = TRUE),
+    lake_maxdepth = first(lake_maxdepth_m),
+    .groups = "drop"
+  )
+
+#plot seasonality
+
+vht_seasonal_plot <- ggplot(monthly_vht, aes(x = month, y = mean_VHT, color = factor(link_lagosid))) +
+  geom_line(size = 1.2, alpha = 0.8) +
+  geom_point(size = 2.5, alpha = 0.9) +
+  scale_x_continuous(breaks = 1:12, 
+                     labels = c("Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")) +
+  scale_color_viridis_d(name = "Lake ID") +  # Use viridis color palette for better distinction
+  labs(
+    title = "Seasonal Variation in Vertical Habitat Thickness (VHT)",
+    x = "",
+    y = "Mean VHT (m)",
+    color = "LAGOS Lake ID"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    axis.title = element_text(size = 14),
+    axis.text.x = element_text(size = 14),
+    legend.title = element_text(size = 14),
+    legend.position = "right",
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_line(color = "gray90", size = 0.5),
+    panel.grid.major.y = element_line(color = "gray90", size = 0.5)
+  )
+
+# Display the plot
+print(vht_seasonal_plot)
+
+#calculate JAS 
+
+#add to preseason_predictors
+
+#add to concurrent_predictors
+
+
+#look at seasonality of VHT, north vs south MN
 
 
 
