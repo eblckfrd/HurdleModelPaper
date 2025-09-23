@@ -14,6 +14,7 @@ library(LAGOSNE)
 library(ggplot2)
 library(ggmap)
 library(gridExtra)
+library(mgcv)
 
 #----------------------------------------------------------------------------------------------------------
 
@@ -33,26 +34,44 @@ library(gridExtra)
          #lagos ID, name, lake area, lake perim, hu zones, elevation, stat and county zone id
 #lake_characteristics <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/lake_characteristics.csv")
         #hydrology/lake connectivity
+#epi_waterquality10873 <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/epi_waterquality10873.csv")
+        #LAGOS-NE water quality params
+#chemistry_limno <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/chemistry_limno.csv")
+      #this is from LAGOS-US, all water quality parameters
 
-#this is from LAGOS-US, all water quality parameters
-  #chemistry_limno <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/chemistry_limno.csv")
+#-----------------------
 
-#LAGOS-NE water quality params
-  #epi_waterquality10873 <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/epi_waterquality10873.csv")
-  
+#ice duration from Minnesota Lake Ice Phenology dataset: https://conservancy.umn.edu/items/940c6197-486b-437c-96ca-cca9b4534dfa
+
+#ice_data <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/ice_duration.csv")
+
+#DOW : Department of Waterbody Lake ID
+#winter.year : If the ice came on in fall of 2000 and melted in spring of 2001 the winter.year variable would be 2001
+    #using this one
+#fall.year : The fall year of the observation. If the ice came on in fall of 2000 and melted in the spring of 2001 the fall.year variable would be 2000
+
 
 ##Profile data processing ------------------------------------------------------------------------------------
 
 # Only keep columns that are needed
 # Filter for only lakes that stratify-- filter for geom ratio <4 (ratio already calculated in profiles dataset)
 
-MN_profiles <- FULL_MN_profiles %>% #takes data down to 714,410 and 15 variables
+MN_profiles <- FULL_MN_profiles %>% #takes data down to 714,410 and 159 variables
   dplyr::select(link_lagosid, year, date, doy, latitude, longitude, 
                 monitoringlocationidentifier, monitoringlocationname,
                 profile_ident, n_dep_inprofile,
                 depth_m, temp_c, do_ppm, lake_geomratio, lake_maxdepth_m, lake_area_m2,
                 flag_do, flag_temp, flag_dep_diff) %>%
   filter(lake_geomratio <= "4") 
+
+#look at 2019 to see if there are missing values?
+values_2019 <- MN_profiles_final %>%
+  filter(year == 2019) %>%
+  distinct(profile_ident, .keep_all = TRUE) %>%
+  select(date, link_lagosid, profile_ident, n_dep_inprofile, depth_m, temp_c, do_ppm ) %>%
+  arrange(profile_ident)
+
+print(profiles_with_vht_2019)
 
 #rename just so i can run the borrowed code from Mike below
 MN_profiles <- MN_profiles %>%
@@ -94,6 +113,14 @@ valid_profiles <- MN_profiles %>% #Profiles must have a minimum depth less than 
 
 MN_profiles <- MN_profiles %>%
   filter(profile_ident %in% valid_profiles)
+
+#replace incorrect max depths (identified in code lines ~700 and moved up in code order)
+
+#East Moore Lake in Minneapolis, MN; DNR lists max depth as 6.7m, ID = 197
+MN_profiles$lake_max_depth_m[MN_profiles$link_lagosid == 197] <- 6.7
+
+#MN DNR says 8.5 m max depth for ID = 734
+MN_profiles$lake_max_depth_m[MN_profiles$link_lagosid == 734] <- 8.5
 
 #look at data
 glimpse(MN_profiles)
@@ -151,48 +178,13 @@ ggplot(data = MN_profiles_10yrs, aes(x = year)) +
 MN_profiles_10yrs <- MN_profiles_10yrs %>%
   filter(year >= 1980 & year <= 2020)
 
-
-# See how many lakes have n_dep_inprofile values that dont match the lake's max depth: 406 
-#chose 5m mismatch as arbitrary wiggle room..
-
-MN_profiles_10yrs %>%
-  mutate(depth_mismatch = abs(n_dep_inprofile - lake_maxdepth_m) > 5) %>%
-  # Step 2: Group by lake ID
-  group_by(link_lagosid) %>%
-  # Step 3: Summarize if any mismatch exists for the lake
-  summarise(has_mismatch = any(depth_mismatch), .groups = "drop") %>%
-  # Step 4: Count how many lakes have a mismatch
-  summarise(num_lakes_with_mismatch = sum(has_mismatch))
-
-  #should i remove these lakes? so that im only looking at lakes that have full depth profiles at the deep hole?
-  #or do we want to consider lakes with sampling at multiple basins?
-  #i think we should have just one sampling site per lake..
-
-# Look at how many lakes have more than one monitoring location identifier: 387 lakes out of 517
+# Look at how many lakes have more than one monitoring location identifier: 364 lakes
 
 MN_profiles_10yrs %>%
   group_by(link_lagosid) %>%
   summarise(num_sites = n_distinct(monitoringlocationidentifier), .groups = "drop") %>%
   filter(num_sites > 1) %>%
   summarise(num_lakes_with_multiple_sites = n())
-
-#see if these are the same lakes.... intersection of 364 lakes! So kinda?
-
-depth_mismatch_lakes <- MN_profiles_10yrs %>%
-  mutate(depth_mismatch = abs(n_dep_inprofile - lake_maxdepth_m) > 2) %>%
-  group_by(link_lagosid) %>%
-  summarise(has_mismatch = any(depth_mismatch), .groups = "drop") %>%
-  filter(has_mismatch) %>%
-  pull(link_lagosid)
-
-multi_site_lakes <- MN_profiles_10yrs %>%
-  group_by(link_lagosid) %>%
-  summarise(num_sites = n_distinct(monitoringlocationidentifier), .groups = "drop") %>%
-  filter(num_sites > 1) %>%
-  pull(link_lagosid)
-
-intersect_lakes <- intersect(depth_mismatch_lakes, multi_site_lakes)
-length(intersect_lakes)
 
 # How to get down to just one central site per lake? need it like this to be able to bin lakes based on categories...
 
@@ -221,7 +213,7 @@ MN_profiles_10yrs %>%
   arrange(desc(n)) %>%
   head(10)
 
-# Look at the distribution of depth mismatches
+# Look at the distribution of depth mismatches between # of depths in profile and lake max depth
 depth_distribution <- MN_profiles_10yrs %>%
   mutate(depth_diff = abs(n_dep_inprofile - lake_maxdepth_m)) %>%
   summarise(
@@ -238,56 +230,231 @@ print(depth_distribution)
 #mean_diff median_diff q75_diff  q90_diff  q95_diff  max_diff
 #4.113012    1.811033  5.291329  10.61911  15.49476  62.35855
 
-#First identified 72 lakes that dont have >70% coverage in any profiles
-#FILTER AND REMOVE any profiles where the depth has >50% difference from lake max depth
 
-problem_lakes <- MN_profiles_10yrs %>%
+#find lake profiles that cover >=50% of max depth OR is >=10m deep
+good_lakes_any <- MN_profiles_10yrs %>%
   mutate(
-    relative_diff = abs(n_dep_inprofile - lake_maxdepth_m) / lake_maxdepth_m,
-    depth_mismatch = relative_diff > 0.5
+    # Calculate what percentage of max depth this profile covers
+    depth_coverage = n_dep_inprofile / lake_maxdepth_m,
+    # Profile is adequate if it covers >=50% of max depth OR is >=10m deep
+    adequate_profile = (depth_coverage >= 0.5) | (n_dep_inprofile >= 10)
   ) %>%
   group_by(link_lagosid) %>%
   summarise(
-    all_profiles_flagged = all(depth_mismatch),
+    has_adequate_profiles = any(adequate_profile),
+    max_coverage = max(depth_coverage),
+    max_profile_depth = max(n_dep_inprofile),
+    n_profiles = n(),
     .groups = "drop"
   ) %>%
-  filter(all_profiles_flagged) %>%
+  filter(has_adequate_profiles) %>%
   pull(link_lagosid)
 
-print(paste("Number of problem lakes to remove:", length(problem_lakes)))
+#filter
+MN_profiles_filtered <- MN_profiles_10yrs %>%
+  filter(link_lagosid %in% good_lakes_any)
 
-# Remove the 72 problem lakes entirely
-MN_profiles_final <- MN_profiles_10yrs %>%
-  filter(!link_lagosid %in% problem_lakes) %>%
-  # Apply the 50% relative threshold to remaining lakes
+# Now analyze temp and DO patterns in deep profiles (>=10m)
+deep_profile_analysis <- MN_profiles_filtered %>%
+  filter(n_dep_inprofile >= 10) %>%  # Only profiles that are 10m or deeper
+  group_by(link_lagosid, profile_ident) %>%
+  arrange(depth_m) %>%
   mutate(
-    relative_diff = abs(n_dep_inprofile - lake_maxdepth_m) / lake_maxdepth_m,
-    depth_mismatch = relative_diff > 0.5
+    # Flag depths >= 10m within each profile
+    deep_zone = depth_m >= 10
   ) %>%
-  filter(!depth_mismatch) %>%
-  select(-relative_diff, -depth_mismatch)
-
-# Summary of final dataset
-final_summary <- tibble(
-  approach = c("Original", "Final (removed 72 lakes + 50% filter)"),
-  lakes = c(
-    n_distinct(MN_profiles_10yrs$link_lagosid),
-    n_distinct(MN_profiles_final$link_lagosid)
-  ),
-  profiles = c(
-    nrow(MN_profiles_10yrs),
-    nrow(MN_profiles_final)
-  )
-) %>%
+  # First check if we have any data below 10m before calculating stats
+  filter(any(deep_zone)) %>%
+  summarise(
+    max_depth = max(depth_m),
+    n_points_below_10m = sum(deep_zone, na.rm = TRUE),
+    # Get vectors of temp and DO below 10m (removing NAs)
+    temp_vals_below_10m = list(temp_c[deep_zone & !is.na(temp_c)]),
+    do_vals_below_10m = list(do_ppm[deep_zone & !is.na(do_ppm)]),
+    .groups = "drop"
+  ) %>%
+  # Calculate stats only if we have enough valid measurements
   mutate(
-    lakes_removed = c(0, lakes[1] - lakes[2]),
-    profiles_removed = c(0, profiles[1] - profiles[2]),
-    percent_lakes_kept = round(lakes / lakes[1] * 100, 1),
-    percent_profiles_kept = round(profiles / profiles[1] * 100, 1)
+    n_temp_below_10m = map_int(temp_vals_below_10m, length),
+    n_do_below_10m = map_int(do_vals_below_10m, length),
+    # Temperature stats below 10m
+    temp_min_below_10m = map_dbl(temp_vals_below_10m, ~ ifelse(length(.x) >= 2, min(.x), NA_real_)),
+    temp_max_below_10m = map_dbl(temp_vals_below_10m, ~ ifelse(length(.x) >= 2, max(.x), NA_real_)),
+    temp_range_below_10m = temp_max_below_10m - temp_min_below_10m,
+    temp_cv_below_10m = map_dbl(temp_vals_below_10m, ~ ifelse(length(.x) >= 2 & mean(.x) != 0, sd(.x) / mean(.x), NA_real_)),
+    # DO stats below 10m
+    do_min_below_10m = map_dbl(do_vals_below_10m, ~ ifelse(length(.x) >= 2, min(.x), NA_real_)),
+    do_max_below_10m = map_dbl(do_vals_below_10m, ~ ifelse(length(.x) >= 2, max(.x), NA_real_)),
+    do_range_below_10m = do_max_below_10m - do_min_below_10m,
+    do_cv_below_10m = map_dbl(do_vals_below_10m, ~ ifelse(length(.x) >= 2 & mean(.x) != 0, sd(.x) / mean(.x), NA_real_))
+  ) %>%
+  # Remove the list columns we don't need anymore
+  select(-temp_vals_below_10m, -do_vals_below_10m) %>%
+  # Only keep profiles with sufficient data below 10m
+  filter(n_temp_below_10m >= 2 | n_do_below_10m >= 2) %>%
+  # Flag profiles where temp/DO are relatively stable below 10m
+  mutate(
+    temp_stable = ifelse(!is.na(temp_range_below_10m), 
+                         temp_range_below_10m <= 2.0 | (!is.na(temp_cv_below_10m) & temp_cv_below_10m <= 0.1), 
+                         NA),
+    do_stable = ifelse(!is.na(do_range_below_10m), 
+                       do_range_below_10m <= 2.0 | (!is.na(do_cv_below_10m) & do_cv_below_10m <= 0.2), 
+                       NA),
+    both_stable = ifelse(!is.na(temp_stable) & !is.na(do_stable), 
+                         temp_stable & do_stable, 
+                         NA)
   )
 
-print("\nFinal dataset summary:")
-print(final_summary)
+stable_lakes_summary <- deep_profile_analysis %>%
+  group_by(link_lagosid) %>%
+  summarise(
+    n_deep_profiles = n(),
+    n_temp_stable = sum(temp_stable, na.rm = TRUE),
+    n_do_stable = sum(do_stable, na.rm = TRUE),
+    n_both_stable = sum(both_stable, na.rm = TRUE),
+    prop_temp_stable = n_temp_stable / n_deep_profiles,
+    prop_do_stable = n_do_stable / n_deep_profiles,
+    prop_both_stable = n_both_stable / n_deep_profiles,
+    avg_temp_range = mean(temp_range_below_10m, na.rm = TRUE),
+    avg_do_range = mean(do_range_below_10m, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  # Flag lakes where majority of deep profiles show stable conditions
+  mutate(
+    lake_has_stable_temp = prop_temp_stable >= 0.5,
+    lake_has_stable_do = prop_do_stable >= 0.5,
+    lake_has_stable_both = prop_both_stable >= 0.5
+  )
+
+print("Summary of deep profile stability:")
+print(paste("Lakes with deep profiles (>=10m):", nrow(stable_lakes_summary)))
+print(paste("Lakes with stable temperature below 10m:", sum(stable_lakes_summary$lake_has_stable_temp)))
+print(paste("Lakes with stable DO below 10m:", sum(stable_lakes_summary$lake_has_stable_do)))
+print(paste("Lakes with both temp and DO stable below 10m:", sum(stable_lakes_summary$lake_has_stable_both)))
+
+#lakes with deep profiles = 268
+#lakes with stable temp below 10m = 178
+#lakes with stable DO below 10m = 205
+#lakes with both temp and DO stable below 10m = 145
+
+# Get list of lakes that are stable below 10m (we'll keep ALL profiles from these lakes); 145 lakes
+stable_lakes <- stable_lakes_summary %>%
+  filter(lake_has_stable_both) %>%  # Change this criteria as needed
+  pull(link_lagosid)
+
+# Now apply the two-tier filtering approach
+MN_profiles_final <- MN_profiles_filtered %>%
+  mutate(
+    depth_coverage = n_dep_inprofile / lake_maxdepth_m,
+    is_stable_lake = link_lagosid %in% stable_lakes
+  ) %>%
+  filter(
+    # Keep ALL profiles from stable lakes
+    is_stable_lake | 
+      # OR keep profiles that cover >80% of max depth from non-stable lakes
+      (!is_stable_lake & depth_coverage > 0.8)
+  )
+
+print("Filtering Summary:")
+print(paste("Total lakes after initial filtering:", length(unique(MN_profiles_filtered$link_lagosid)))) #436
+print(paste("Lakes classified as stable below 10m:", length(stable_lakes))) #145
+print(paste("Lakes in final dataset:", length(unique(MN_profiles_final$link_lagosid)))) #391
+print(paste("Total profiles after initial filtering:", nrow(MN_profiles_filtered))) #408748
+print(paste("Total profiles in final dataset:", nrow(MN_profiles_final))) #335089
+
+
+# Check what depth coverage we're getting in non-stable lakes
+non_stable_coverage <- MN_profiles_final %>%
+  filter(!link_lagosid %in% stable_lakes) %>%
+  mutate(depth_coverage = n_dep_inprofile / lake_maxdepth_m) %>%
+  pull(depth_coverage)
+
+if(length(non_stable_coverage) > 0) {
+  print(paste("\nDepth coverage in non-stable lakes (kept profiles):"))
+  print(paste("Mean coverage:", round(mean(non_stable_coverage, na.rm = TRUE), 3))) #1.116
+  print(paste("Min coverage:", round(min(non_stable_coverage, na.rm = TRUE), 3))) #0.8
+  print(paste("Profiles with >90% coverage:", sum(non_stable_coverage > 0.9, na.rm = TRUE))) #104080
+}
+
+print(paste("Lakes in final dataset:", length(unique(MN_profiles_final$link_lagosid))))
+#391
+
+#check what years are included here
+ggplot(data = MN_profiles_final, aes(x = year)) +
+  geom_histogram(binwidth = 1, fill = "blue", color = "black", alpha = 0.7) +
+  theme_minimal()
+
+# #find lakes where ALL profiles have >50% relative difference from max depth
+# #BUT keep lakes that have profiles >= 10m (even if they have >50% relative difference)
+# problem_lakes <- MN_profiles_10yrs %>%
+#   mutate(
+#     relative_diff = abs(n_dep_inprofile - lake_maxdepth_m) / lake_maxdepth_m,
+#     depth_mismatch = relative_diff > 0.5,
+#     deep_profile = n_dep_inprofile >= 10  # Flag profiles that are 10m or deeper
+#   ) %>%
+#   group_by(link_lagosid) %>%
+#   summarise(
+#     all_profiles_flagged = all(depth_mismatch),
+#     has_deep_profiles = any(deep_profile),  # Check if lake has any profiles >= 10m
+#     .groups = "drop"
+#   ) %>%
+#   filter(all_profiles_flagged & !has_deep_profiles) %>%  # Only flag lakes without deep profiles
+#   pull(link_lagosid)
+# 
+# #check if these are really deep lakes? a couple are, but most arent
+# #adjusted code above to keep lakes that have profiles >10m, because that will likely get us to below strat
+# MN_profiles_10yrs %>%
+#   filter(link_lagosid %in% problem_lakes) %>%
+#   select(link_lagosid, n_dep_inprofile, lake_maxdepth_m) %>%
+#   pivot_longer(cols = c(n_dep_inprofile, lake_maxdepth_m), 
+#                names_to = "depth_type", 
+#                values_to = "depth") %>%
+#   ggplot(aes(x = depth, fill = depth_type)) +
+#   geom_histogram(bins = 20, alpha = 0.7, position = "identity") +
+#   labs(title = "Depth Distributions for Problem Lakes",
+#        x = "Depth (m)",
+#        y = "Count") +
+#   theme_minimal() +
+#   scale_fill_manual(values = c("steelblue", "coral"),
+#                     labels = c("Max Lake Depth", "Profile Depth"))
+# 
+# 
+# # Remove the 65 problem lakes entirely
+# MN_profiles_final <- MN_profiles_10yrs %>%
+#   filter(!link_lagosid %in% problem_lakes) %>%
+#   #remove any remaining profiles that dont reach at least 50% of max depth
+#   mutate(
+#     relative_diff = abs(n_dep_inprofile - lake_maxdepth_m) / lake_maxdepth_m,
+#     depth_mismatch = relative_diff > 0.5
+#   ) %>%
+#   filter(!depth_mismatch) %>%
+#   select(-relative_diff, -depth_mismatch)
+# 
+# # Summary of final dataset
+# final_summary <- tibble(
+#   approach = c("Original", paste0("Final (removed ", length(problem_lakes), " lakes + 50% filter)")),
+#   lakes = c(
+#     n_distinct(MN_profiles_10yrs$link_lagosid),
+#     n_distinct(MN_profiles_final$link_lagosid)
+#   ),
+#   profiles = c(
+#     nrow(MN_profiles_10yrs),
+#     nrow(MN_profiles_final)
+#   )
+# ) %>%
+#   mutate(
+#     lakes_removed = c(0, lakes[1] - lakes[2]),
+#     profiles_removed = c(0, profiles[1] - profiles[2]),
+#     percent_lakes_kept = round(lakes / lakes[1] * 100, 1),
+#     percent_profiles_kept = round(profiles / profiles[1] * 100, 1)
+#   )
+# 
+# print("\nFinal dataset summary:")
+# print(final_summary)
+# 
+# ##if i used 70% instead, it would take lake count down to 390, and profiles to 317,418
+# 
+# ##if i used 80%, it would take lake count down to 260, and profiles to 262,513
 
 
 # Filter for any specific months? Mar-Oct, 371412 obs left
@@ -296,13 +463,13 @@ MN_profiles_final <- MN_profiles_final %>%
   filter(month >= 3 & month <= 10)
 
 # Identify lakes with at least one sample during July–September (DOY 182–273)
-#8 lakes dont fit this requirement.. only 421 lakes
+#8 lakes dont fit this requirement.. only 379 lakes
 lakes_with_summer_sample <- MN_profiles_final %>%
   filter(doy >= 182 & doy <= 273) %>%
   distinct(link_lagosid)
 
 #do the same with spring sample April-June (91-181)
-#only 416 lakes..
+#only 372 lakes..
 lakes_with_spring_sample <- MN_profiles_final %>%
   filter(doy >= 91 & doy <= 181) %>%
   distinct(link_lagosid)
@@ -313,13 +480,13 @@ lakes_with_both <- intersect(
   lakes_with_summer_sample$link_lagosid
 )
 
-# Confirm how many lakes remain: 410
+# Confirm how many lakes remain: 360
 length(lakes_with_both)
 
 #view lakes
 excluded_lakes <- setdiff(unique(MN_profiles_final$link_lagosid), lakes_with_both)
 
-#filter dataset to remove those lakes
+#filter dataset to KEEP only those lakes
 MN_profiles_final <- MN_profiles_final %>%
   filter(link_lagosid %in% lakes_with_both)
 
@@ -413,11 +580,11 @@ EndofYear = MN_profiles_final %>%
 MN_selected_profiles <- MN_profiles_final %>%
   filter(link_lagosid %in% unique_lakeIDs$link_lagosid)
 
-#check that this worked; it did! 410 lakes included
+#check that this worked; it did! 360 lakes included
 n_distinct(MN_selected_profiles$link_lagosid)
 
 
-####ignore this, ended up not being an issue with random forest models, they allow for non-consecutive samples as long as predictor years match
+####ignore this, ended up not being an issue with random forest models, they allow for non-consecutive samples as long as predictor years match --------
 
 # #do I need only lakes that have consecutive sampling?
 # lake_years <- MN_selected_profiles %>%
@@ -614,6 +781,7 @@ epi_waterquality10873 <- epi_waterquality10873 %>%
 chemistry_limno <- chemistry_limno %>%
   filter(lagoslakeid %in% unique_lakeIDs$link_lagosid)
 
+
 ##LAGOS data processing and category separation --------------------------------
 
 #using unique_lakeIDs as my sorting dataset
@@ -625,6 +793,9 @@ chemistry_limno <- chemistry_limno %>%
 
 recent_secchi <- chemistry_limno %>%
   filter(parameter_name == "secchi_m", !is.na(sample_date)) %>%
+  # Extract month from sample_date and filter for summer months (6-9)
+  mutate(month = month(sample_date)) %>%
+  filter(month >= 6 & month <= 9) %>%
   group_by(lagoslakeid) %>%
   slice_max(order_by = sample_date, n = 1, with_ties = FALSE) %>%
   ungroup() %>%
@@ -645,7 +816,7 @@ unique_lakeIDs <- unique_lakeIDs %>%
 unique_lakeIDs <- unique_lakeIDs %>%
   mutate(TSI = 60 - (14.41 * log(secchi)))
 
-#remove any nan or inf, takes us down to 407 lakes
+#remove the 1 secchi depth of 0 (max depth of 1m) resulted in inf, takes us down to 409 lakes
 unique_lakeIDs <- unique_lakeIDs %>%
   filter(is.finite(TSI))
 
@@ -667,7 +838,7 @@ unique_lakeIDs <- unique_lakeIDs %>%
 table(unique_lakeIDs$trophic_state)
 
 #Eutrophic  Mesotrophic Oligotrophic 
-#169          154           84
+#185          141           83
 
 
 #color histogram by trophic state
@@ -680,9 +851,8 @@ ggplot(unique_lakeIDs, aes(x = TSI, fill = trophic_state)) +
   scale_fill_manual(values = c("Oligotrophic" = "skyblue", "Eutrophic" = "forestgreen")) +
   theme_minimal()
 
-#color on map by trophic state; dont include mesotrophic lakes
-ggplot(unique_lakeIDs %>% filter(trophic_state != "Mesotrophic"),
-       aes(x = longitude, y = latitude, color = trophic_state)) +
+#color on map by trophic state
+ggplot(unique_lakeIDs, aes(x = longitude, y = latitude, color = trophic_state)) +
   borders("state", regions = "minnesota", fill = "gray95", colour = "gray70") +
   geom_point(size = 2, alpha = 0.8) +
   coord_quickmap(
@@ -702,11 +872,55 @@ ggplot(unique_lakeIDs %>% filter(trophic_state != "Mesotrophic"),
 
 #even though mean depth might be a better depth separator (according to Wetzel's Limno), but only have max depth available through LAGOS and profiles dataset
 
+#repair max depth issue found while calculating VHT; see mismatch below
+
+# A tibble: 6 × 4
+#link_lagosid date       temp_depth lake_maxdepth_m
+#<int> <date>          <dbl>           <dbl>
+#1          197 1984-08-14       6               5.5 
+#2          305 2017-06-07       5               2.13
+#3          305 2017-08-29       5               2.13
+#4          381 2006-07-24       4.5             4.27
+#5          734 2009-07-14       7.77            7.62
+#6         1171 2013-07-16      22.9            10.4 
+
+#this depth data is the same as in LAGOS; find lakes on internet by their coordinates and name
+
+#fix these DEPTHS earlier up: lakes 197, 734
+
+#investigate profiles
+
+lake_ids <- c(305, 305, 381, 1171)
+dates <- c("2017-06-07", "2017-08-29", "2006-07-24", "2013-07-16")
+
+# Filter to all four specific profiles
+profiles_to_investigate <- MN_profiles[
+  (MN_profiles$link_lagosid == 305 & MN_profiles$date == "2017-06-07") |
+    (MN_profiles$link_lagosid == 305 & MN_profiles$date == "2017-08-29") |
+    (MN_profiles$link_lagosid == 381 & MN_profiles$date == "2006-07-24") |
+    (MN_profiles$link_lagosid == 1171 & MN_profiles$date == "2013-07-16"), ]
+
+# View the results
+View(profiles_to_investigate)
+
+#In 381 2006-07-24, error is in depth_m, recorded as 4.5 but lets change it to 4.27
+#in 1171 i think they recorded measurements in feet and not in meters
+
+#lets just remove these 4 profile dates
+MN_profiles <- MN_profiles[
+  !((MN_profiles$link_lagosid == 305 & MN_profiles$date == "2017-06-07") |
+      (MN_profiles$link_lagosid == 305 & MN_profiles$date == "2017-08-29") |
+      (MN_profiles$link_lagosid == 381 & MN_profiles$date == "2006-07-24") |
+      (MN_profiles$link_lagosid == 1171 & MN_profiles$date == "2013-07-16")), ]
+
+
+#depth category -----------------------------
+
 #use 33% quantiles as shallow and deep cutoffs
 #this aligns with <10m or less being shallow for stratifying lakes
 
-mean_depth <- mean(unique_lakeIDs$lake_maxdepth_m, na.rm = TRUE) #14.6
-sd_depth <- sd(unique_lakeIDs$lake_maxdepth_m, na.rm = TRUE) #9.6
+mean_depth <- mean(unique_lakeIDs$lake_maxdepth_m, na.rm = TRUE) #14.3
+sd_depth <- sd(unique_lakeIDs$lake_maxdepth_m, na.rm = TRUE) #9.4
 
 cutoffs <- quantile(unique_lakeIDs$lake_maxdepth_m, probs = c(0.33, 0.66), na.rm = TRUE)
 
@@ -741,13 +955,13 @@ table(unique_lakeIDs$depth_category)
 unique_lakeIDs %>%
   count(trophic_state, depth_category)
 
-#Eutrophic     Deep              19
-#Eutrophic     Medium            55
-#Eutrophic     Shallow           95
+#Eutrophic     Deep              21
+#Eutrophic     Medium            63
+#Eutrophic     Shallow           101
 
-#Oligotrophic  Deep              61
-#Oligotrophic  Medium            18
-#Oligotrophic  Shallow            5
+#Oligotrophic  Deep              60
+#Oligotrophic  Medium            21
+#Oligotrophic  Shallow            2
 
 
 #now for hydrology category, seepage (or "isolated" vs. drainage)
@@ -763,7 +977,7 @@ lake_characteristics <- lake_characteristics %>%
 table(lake_characteristics$lake_connectivity_permanent)
 
 #Drainage DrainageLk  Headwater   Isolated   Terminal TerminalLk 
-#52        174         52        110         13          6
+#52        174         53        111         13          6
 
 
 #I AM DECIDING TO ONLY USE PERMANENT FLOW.... NOT CONSIDERING BOTH PERMAMENT AND INTERMITTENT-EPHERMERAL FLOW -------
@@ -807,7 +1021,16 @@ unique_lakeIDs <- unique_lakeIDs %>%
 table(unique_lakeIDs$hydro_category)
 
 #Drainage    Other  Seepage 
-#226       71      110
+#226       72      111
+
+ggplot(unique_lakeIDs, aes(x = hydro_category)) +
+  geom_histogram(binwidth = 2, color = "black", fill = "skyblue", stat = "count") +
+  geom_vline(xintercept = shallow_cut, color = "red", linetype = "dashed", linewidth = 1) +
+  geom_vline(xintercept = deep_cut, color = "red", linetype = "dashed", linewidth = 1) +
+  labs(title = "Hydrologic Connectivity",
+       x = "Connectivity Type",
+       y = "Number of Lakes") +
+  theme_minimal()
 
 
 #missing lat and lon in unique_lakeIDs for lake 79457 -- pull from LAGOSNE_lakeslocus 101
@@ -827,16 +1050,30 @@ unique_lakeIDs <- unique_lakeIDs %>%
 unique_lakeIDs %>%
   filter (lagoslakeid == 79457)
 
-#now assign north and south to all lakes based on "K-means Clustering of Mesonet Stations" figure, 46 LAT looks like good divider
+#now assign north and south to all lakes based on "K-means Clustering of Mesonet Stations" figure
+#also following ecoregion boundaries-- other Minnesota lit uses a squiggly line, not a line at 46 lat
 
+#define points along drawn boundary
+boundary_data <- data.frame(
+  lon = c(-97, -96.5, -96, -95, -94.5, -94, -93.5, -93, -92, -91, -90),
+  lat = c(47.2, 47.0, 46.8, 46.5, 46.3, 46.6, 46.4, 46.2, 45.0, 45.0, 45.0)
+)
+
+#fit a smooth function
+boundary_model <- gam(lat ~ s(lon), data = boundary_data)
+
+#apply to lakes
 unique_lakeIDs <- unique_lakeIDs %>%
-  mutate(geo_position = if_else(latitude > 46, "North", "South"))
+  mutate(
+    boundary_lat = predict(boundary_model, newdata = data.frame(lon = longitude)),
+    geo_position = if_else(latitude > boundary_lat, "North", "South")
+  )
 
 #see how many is in each column
 table(unique_lakeIDs$geo_position)
 
 #North South 
-#141   266 
+#141   268
 
 
 ##make a figure for prelim proposal --------------------------------------------------
@@ -863,6 +1100,8 @@ p1 <- ggplot(unique_lakeIDs) +
     legend.text = element_text(size = 12),  # Increases the size of the legend text
     legend.title = element_text(size = 12)# Facet label size (if used)
   )
+
+print(p1)
 
 
 p2 <- ggplot(unique_lakeIDs %>% filter(trophic_state != "Mesotrophic"),
@@ -937,6 +1176,7 @@ p4 <- ggplot(unique_lakeIDs %>% filter(hydro_category != "Other"),
 
 #combine
 grid.arrange(p1, p2, p3, p4, ncol = 2)
+
 
 
 # calculate WATER QUALITY PREDICTORS ------------------------------------------------------------
@@ -1083,7 +1323,7 @@ preseason_waterq_predictors <- LAGOSwaterquality %>%
     .groups = "drop"
   )
 
-#there are a lot of NaNs here... 36,550
+#there are a lot of NaNs here... 28729
 sum(is.nan(as.matrix(preseason_waterq_predictors)))
 
 #see which columns they are mostly in: 
@@ -1120,7 +1360,7 @@ concurrent_waterq_predictors <- LAGOSwaterquality %>%
     .groups = "drop"
   )
 
-#counts NaNs.. 37,830
+#counts NaNs.. 29910
 sum(is.nan(as.matrix(concurrent_waterq_predictors))) 
 
 #see which columns they are mostly in: 
@@ -1138,18 +1378,134 @@ concurrent_waterq_predictors <- concurrent_waterq_predictors %>%
 
 #should i try to fill the NaNs? 
 
+#ice data ----------------------------------------------------------------------------------------
 
 #predictors needed for all years: ice-on time, water level
+#use winter.year to filter years
+ice_data <- ice_data %>%
+  filter(winter.year >= 1980 & winter.year <= 2020)
 
-#try calculating thermocline depth? to use as a predictor?
+#how many lakes are there with ice data: 1244 
+print(paste("Unique lake IDs:", length(unique(ice_data$DOW))))
+
+#ice duration processing; first trim down columns
+#keep winter.year, DOW, min_duration
+ice_data <- ice_data %>%
+  select(DOW, winter.year, min_duration)
+
+#pull data from full_MN_profiles and lagosne to try to find lagosid's for all DOW ice lakes
+testing_bridge <- LAGOSNE_lakeslocus101 %>%
+  inner_join(
+    FULL_MN_profiles %>% distinct(nhdid = link_nhd_id, lagoslakeid = link_lagosid, state_ident),
+    by = c("nhdid", "lagoslakeid")
+  ) %>%
+  select(lagoslakeid, nhdid, state_ident)
+
+#now join using bridge
+ice_data <- ice_data %>%
+  left_join(
+    testing_bridge %>% select(state_ident, lagoslakeid),
+    by = c("DOW" = "state_ident")
+  )
+
+#how many DOWs are missing a lagos_id? #229
+ice_data %>%
+  filter(is.na(lagoslakeid)) %>%
+  summarise(unique_DOWs_without_lagoslakeid = n_distinct(DOW))
+
+
+#how many lakes match?
+#there are 149 lakes in unique_lakeIDs that are missing from ice_data
+missing_lakes <- setdiff(unique_lakeIDs$link_lagosid, ice_data$lagoslakeid)
+cat("Number of lakes missing from ice_data:", length(missing_lakes), "\n")
+
+#plot to see on graph
+unique_lakeIDs$has_ice_data <- unique_lakeIDs$link_lagosid %in% ice_data$lagoslakeid
+
+ggplot(unique_lakeIDs, aes(x = longitude, y = latitude, color = has_ice_data)) +
+  borders("state", regions = "minnesota", fill = "gray95", colour = "gray70") +
+  geom_point(size = 2, alpha = 0.7) +
+  scale_color_manual(values = c("TRUE" = "blue", "FALSE" = "red"),
+                     labels = c("TRUE" = "Has ice data", "FALSE" = "Missing ice data")) +
+  coord_quickmap(
+    xlim = c(-97.5, -89),   # Longitude range for Minnesota
+    ylim = c(43.5, 49.5)    # Latitude range for Minnesota
+  ) +
+  theme_minimal() +
+  labs(
+    title = "Minnesota Lakes: Ice Data Coverage",
+    x = "Longitude",
+    y = "Latitude",
+    color = "Status"
+  )
+
+
+# #try to match ids through lat and lon..
+#this didnt work well
+
+# missing_dow_coords <- FULL_MN_profiles %>%
+#   filter(state_ident %in% missing_lagos_DOWs$DOW) %>%
+#   select(state_ident, latitude, longitude) %>%  # adjust column names if needed
+#   distinct(state_ident, .keep_all = TRUE)
+# 
+# dow_check <- FULL_MN_profiles %>%
+#   filter(state_ident %in% missing_lagos_DOWs$DOW) %>%
+#   distinct(state_ident)
+# 
+# cat("Number of missing DOWs found in FULL_MN_profiles:", nrow(dow_check), "\n")
+# 
+# # Check the coordinates for these DOWs
+# missing_dow_coords <- FULL_MN_profiles %>%
+#   filter(state_ident %in% missing_lagos_DOWs$DOW) %>%
+#   select(state_ident, latitude, longitude) %>%
+#   distinct(state_ident, .keep_all = TRUE)
+# 
+# cat("Number of missing DOWs with coordinates:", nrow(missing_dow_coords), "\n")
+# 
+# cat("\nNA values in FULL_MN_profiles coordinates:", 
+#     sum(is.na(FULL_MN_profiles$latitude)) + sum(is.na(FULL_MN_profiles$longitude)), "\n")
+# 
+# cat("NA values in unique_lakeIDs coordinates:", 
+#     sum(is.na(unique_lakeIDs$latitude)) + sum(is.na(unique_lakeIDs$longitude)), "\n")
+# 
+# missing_dow_coords <- FULL_MN_profiles %>%
+#   filter(state_ident %in% missing_lagos_DOWs$DOW) %>%
+#   filter(!is.na(latitude) & !is.na(longitude)) %>%  # Remove NAs
+#   select(state_ident, latitude, longitude) %>%
+#   distinct(state_ident, .keep_all = TRUE)
+# 
+# missing_dow_coords <- missing_dow_coords %>%
+#   left_join(unique_lakeIDs %>% 
+#               select(latitude, longitude, link_lagosid) %>% 
+#               distinct(link_lagosid, .keep_all = TRUE), 
+#             by = c("latitude" = "latitude", "longitude" = "longitude"))
+# 
+# # Round coordinates to reduce floating-point precision issues
+# missing_dow_coords <- missing_dow_coords %>%
+#   mutate(
+#     lat_rounded = round(latitude, 2),    # 6 decimal places ≈ 0.1 meter precision
+#     lon_rounded = round(longitude, 2)
+#   )
+# 
+# unique_lakeIDs <- unique_lakeIDs %>%
+#   mutate(
+#     lat_rounded = round(latitude, 2),
+#     lon_rounded = round(longitude, 2)
+#   )
+# 
+# # Join on rounded coordinates
+# result <- missing_dow_coords %>%
+#   left_join(
+#     unique_lakeIDs %>% 
+#       select(lat_rounded, lon_rounded, link_lagosid) %>%
+#       distinct(link_lagosid, .keep_all = TRUE),
+#     by = c("lat_rounded" = "lat_rounded", "lon_rounded" = "lon_rounded")
+#   )
 
 
 # Calculate CLIMATE PREDICTORS -----------------------------------------------------------------------------------------
 
 #PAR, surface wind speed, air temp, precip, ENSO, PDO, NAM, geopotential height 500
-
-#look back at mesonet data?
-#PRISM data?
 
 #PDO index ----
 #PDO_index <- read.table("~/Desktop/Research/Data/Climate Index Data/PDO_index.txt", header = TRUE, sep = "", dec = ".")
@@ -1196,542 +1552,88 @@ concurrent_predictors <- concurrent_predictors %>%
   rename(AO_Jul = Jul, AO_JAS = JAS_Avg)
 
 
-#ENSO index -----
-#which one?
+#Nino 3.4 index -----
 
-#PNA index
+#Nino34_index <- read.table("~/Documents/R Repositories/Ch2_DataAnalysis/Nino3.4_Index.txt", header = TRUE, sep = "", dec = ".")
 
+#may-june average
+Nino34_index <- Nino34_index %>%
+  mutate(MJ_Avg = rowMeans(select(., May, Jun), na.rm = TRUE))
 
+#JAS
+Nino34_index <- Nino34_index %>%
+  mutate(JAS_Avg = rowMeans(select(., Jul, Aug, Sep), na.rm = TRUE))
 
+#add all to full predictor datasets
+preseason_predictors <- preseason_predictors %>%
+  left_join(Nino34_index %>% select(Year, Jun, MJ_Avg), 
+            by = c("year" = "Year")) %>%
+  rename(ENSO_June = Jun, ENSO_MJ = MJ_Avg)
 
+concurrent_predictors <- concurrent_predictors %>%
+  left_join(Nino34_index %>% select(Year, Jul, JAS_Avg), 
+            by = c("year" = "Year")) %>%
+  rename(ENSO_Jul = Jul, ENSO_JAS = JAS_Avg)
 
-# Calculate VHT for 5 selected lake profiles ----------------------------------------------------------------------------------------
+#PNA index -------
 
-#calculate VHT function -------------
+#PNA_index <- read.table("~/Documents/R Repositories/Ch2_DataAnalysis/PNA_Index.txt", header = TRUE, sep = "", dec = ".")
 
-#Minnesota: based on TDO3… so 3mg/L and 21.5 C
-#from MDNR water quality standard guide
+#may-june average
+PNA_index <- PNA_index %>%
+  mutate(MJ_Avg = rowMeans(select(., May, Jun), na.rm = TRUE))
 
-#first take a subset of lakes to apply it to and make sure this code is working accurately
+#JAS
+PNA_index <- PNA_index %>%
+  mutate(JAS_Avg = rowMeans(select(., Jul, Aug, Sep), na.rm = TRUE))
 
-first_five_lakes <- MN_selected_profiles %>%
-  distinct(link_lagosid) %>%
-  slice(1:5)
+#add all to full predictor datasets
+preseason_predictors <- preseason_predictors %>%
+  left_join(PNA_index %>% select(Year, Jun, MJ_Avg), 
+            by = c("year" = "Year")) %>%
+  rename(PNA_June = Jun, PNA_MJ = MJ_Avg)
 
-firstfive_lakedata <- MN_selected_profiles %>%
-  filter(link_lagosid %in% first_five_lakes$link_lagosid) %>%
-  dplyr::select(link_lagosid, date, month, year, depth_m, temp_c, do_ppm, lake_maxdepth_m)
+concurrent_predictors <- concurrent_predictors %>%
+  left_join(PNA_index %>% select(Year, Jul, JAS_Avg), 
+            by = c("year" = "Year")) %>%
+  rename(PNA_Jul = Jul, PNA_JAS = JAS_Avg)
 
+#NAM index ----
 
-# Calculate VHT components for each lake profile
-firstfive_lakedata <- firstfive_lakedata %>%
-  # Group by lake and sample date to work with each profile separately
-  group_by(link_lagosid, date, month, year) %>%
-  arrange(link_lagosid, date, depth_m) %>%
-  
-  # Calculate temp_depth: first depth where temp_c <= 22
-  mutate(
-    temp_depth = {
-      temp_indices <- which(temp_c <= 22)
-      if (length(temp_indices) == 0) {
-        0
-      } else {
-        depth_m[temp_indices[1]]
-      }
-    }
-  ) %>%
-  
-  # Calculate o2_depth: first depth where do_ppm <= 4
-  mutate(
-    o2_depth = {
-      o2_indices <- which(do_ppm <= 4)
-      if (length(o2_indices) == 0) {
-        first(lake_maxdepth_m)
-      } else {
-        depth_m[o2_indices[1]]
-      }
-    }
-  ) %>%
-  
-  # Calculate VHT (assuming it's the difference between o2_depth and temp_depth)
-  mutate(
-    VHT = pmax(0, o2_depth - temp_depth)  # Ensure VHT is not negative
-  ) %>%
-  
-  ungroup()
+#NAM_index <- read.table("~/Documents/R Repositories/Ch2_DataAnalysis/NAM_Index.txt", header = TRUE, sep = "", dec = ".")
 
-#check summary of results
-summary(firstfive_lakedata[c("temp_depth", "o2_depth", "VHT")])
+#may-june average
+NAM_index <- NAM_index %>%
+  mutate(MJ_Avg = rowMeans(select(., May, Jun), na.rm = TRUE))
 
-#temp_depth        o2_depth          VHT       
-#Min.   : 0.000   Min.   : 3.96   Min.   : 0.00  
-#1st Qu.: 0.170   1st Qu.:13.02   1st Qu.:10.92  
-#Median : 0.450   Median :21.95   Median :18.02  
-#Mean   : 2.537   Mean   :18.98   Mean   :16.49  
-#3rd Qu.: 4.970   3rd Qu.:24.03   3rd Qu.:21.90  
-#Max.   :15.940   Max.   :28.95   Max.   :28.92
+#JAS
+NAM_index <- NAM_index %>%
+  mutate(JAS_Avg = rowMeans(select(., Jul, Aug, Sep), na.rm = TRUE))
 
-#simplify
-profile_summary <- firstfive_lakedata %>%
-  group_by(link_lagosid, date, month, year) %>%
-  summarise(
-    temp_depth = first(temp_depth),
-    o2_depth = first(o2_depth),
-    VHT = first(VHT),
-    max_depth_sampled = max(depth_m, na.rm = TRUE),
-    lake_maxdepth = first(lake_maxdepth_m),
-    .groups = "drop"
-  )
+#add all to full predictor datasets
+preseason_predictors <- preseason_predictors %>%
+  left_join(NAM_index %>% select(Year, Jun, MJ_Avg), 
+            by = c("year" = "Year")) %>%
+  rename(NAM_June = Jun, NAM_MJ = MJ_Avg)
 
-#calculate monthly vht to plot
-monthly_vht <- profile_summary %>%
-  group_by(link_lagosid, month) %>%
-  summarise(
-    mean_VHT = mean(VHT, na.rm = TRUE),
-    .groups = "drop"
-  )
+concurrent_predictors <- concurrent_predictors %>%
+  left_join(NAM_index %>% select(Year, Jul, JAS_Avg), 
+            by = c("year" = "Year")) %>%
+  rename(NAM_Jul = Jul, NAM_JAS = JAS_Avg)
 
-#plot seasonality
+#air temp and precip ----------
 
-vht_seasonal_plot <- ggplot(monthly_vht, aes(x = month, y = mean_VHT, color = factor(link_lagosid))) +
-  geom_line(size = 1.2, alpha = 0.8) +
-  geom_point(size = 2.5, alpha = 0.9) +
-  scale_x_continuous(breaks = 1:12, 
-                     labels = c("Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")) +
-  scale_color_viridis_d(name = "Lake ID") +  # Use viridis color palette for better distinction
-  labs(
-    title = "Seasonal Variation in Vertical Habitat Thickness (VHT)",
-    x = "",
-    y = "Mean VHT (m)",
-    color = "LAGOS Lake ID"
-  ) +
-  theme_minimal() +
-  theme(
-    plot.title = element_text(size = 16, face = "bold"),
-    axis.title = element_text(size = 14),
-    axis.text.x = element_text(size = 14),
-    legend.title = element_text(size = 14),
-    legend.position = "right",
-    panel.grid.minor = element_blank(),
-    panel.grid.major.x = element_line(color = "gray90", size = 0.5),
-    panel.grid.major.y = element_line(color = "gray90", size = 0.5)
-  )
+#MN_precip
 
-# Display the plot
-print(vht_seasonal_plot)
 
-# Calculate VHT for full lake profiles ----------------------------------------------------------------------------------------
-#MN_selected_profiles 
+#PAR, surface wind speed, geopotential height 500mb ------------
 
-#these lakes need their max depth's edited before running code again
 
-# A tibble: 6 × 4
-#link_lagosid date       temp_depth lake_maxdepth_m
-#<int> <date>          <dbl>           <dbl>
-#  1          197 1984-08-14       6               5.5 
-#2          305 2017-06-07       5               2.13
-#3          305 2017-08-29       5               2.13
-#4          381 2006-07-24       4.5             4.27
-#5          734 2009-07-14       7.77            7.62
-#6         1171 2013-07-16      22.9            10.4 
 
-MN_selected_profiles <- MN_selected_profiles %>%
-  group_by(link_lagosid, date, month, year) %>%
-  arrange(link_lagosid, date, depth_m) %>%
-  
-  # Calculate temp_depth: first depth where temp_c <= 22
-  mutate(
-    temp_depth = {
-      valid_indices <- which(temp_c <= 22 & depth_m >= 0 & !is.na(temp_c))
-      if (length(valid_indices) == 0) {
-        # If temp never reaches 22°C, use the maximum depth (no suitable cool water)
-        ifelse(!is.na(first(lake_maxdepth_m)), 
-               first(lake_maxdepth_m), 
-               max(depth_m[depth_m >= 0], na.rm = TRUE))
-      } else {
-        pmax(0, depth_m[valid_indices[1]])
-      }
-    }
-  ) %>%
-  
-  # Calculate o2_depth: first depth where do_ppm <= 4
-  mutate(
-    o2_depth = {
-      if (all(is.na(do_ppm))) {
-        NA_real_  # Only return NA if we have no oxygen data at all
-      } else {
-        valid_indices <- which(do_ppm <= 4 & depth_m >= 0 & !is.na(do_ppm))
-        if (length(valid_indices) == 0) {
-          # Oxygen never drops below 4, use max depth (all water is oxygenated)
-          ifelse(!is.na(first(lake_maxdepth_m)), 
-                 first(lake_maxdepth_m), 
-                 max(depth_m[depth_m >= 0], na.rm = TRUE))
-        } else {
-          pmax(0, depth_m[valid_indices[1]])
-        }
-      }
-    }
-  ) %>%
-  
-  # Calculate VHT: thickness of suitable habitat
-  mutate(
-    VHT = case_when(
-      is.na(o2_depth) ~ NA_real_,  # Only NA if no oxygen data
-      temp_depth >= o2_depth ~ 0,  # No suitable habitat
-      TRUE ~ o2_depth - temp_depth  # Thickness of suitable habitat
-    )
-  ) %>%
-  
-  ungroup()
 
-#check summary of results
-summary(MN_selected_profiles[c("temp_depth", "o2_depth", "VHT")])
+# Continue on in R script 02-MN_VHT.R and then 03-MN_RFModels.R
 
-#temp_depth        o2_depth          VHT        
-#Min.   : 0.000   Min.   : 0.00   Min.   : 0.000  
-#1st Qu.: 0.000   1st Qu.: 5.00   1st Qu.: 1.000  
-#Median : 0.230   Median : 7.00   Median : 6.000  
-#Mean   : 2.085   Mean   :10.60   Mean   : 8.665  
-#3rd Qu.: 4.020   3rd Qu.:11.00   3rd Qu.:10.333  
-#Max.   :22.894   Max.   :63.36   Max.   :63.359
-
-##QC CHECKS ------------------------------------------------------------------------------
-
-# Check for any remaining issues
-cat("Data integrity checks:\n")
-cat("Any negative temp_depth:", any(MN_selected_profiles$temp_depth < 0, na.rm = TRUE), "\n")
-cat("Any negative o2_depth:", any(MN_selected_profiles$o2_depth < 0, na.rm = TRUE), "\n")
-cat("Any negative VHT:", any(MN_selected_profiles$VHT < 0, na.rm = TRUE), "\n")
-cat("Any NA values in temp_depth:", sum(is.na(MN_selected_profiles$temp_depth)), "\n")
-cat("Any NA values in o2_depth:", sum(is.na(MN_selected_profiles$o2_depth)), "\n")
-cat("Any NA values in VHT:", sum(is.na(MN_selected_profiles$VHT)), "\n")
-
-cat("Validation checks:\n")
-cat("Profiles with NA oxygen data:", sum(is.na(MN_selected_profiles$o2_depth)), "\n")
-cat("Profiles with NA VHT:", sum(is.na(MN_selected_profiles$VHT)), "\n")
-cat("NAs match (should be TRUE):", sum(is.na(MN_selected_profiles$o2_depth)) == sum(is.na(MN_selected_profiles$VHT)), "\n\n")
-
-logic_check <- MN_selected_profiles %>%
-  filter(!is.na(VHT)) %>%
-  mutate(
-    # VHT should be 0 when temp_depth >= o2_depth
-    should_be_zero = temp_depth >= o2_depth,
-    actually_zero = VHT == 0,
-    # VHT should equal o2_depth - temp_depth when temp_depth < o2_depth
-    should_be_positive = temp_depth < o2_depth,
-    correct_calculation = abs(VHT - (o2_depth - temp_depth)) < 0.001
-  )
-
-cat("Logic validation:\n")
-cat("Cases where VHT should be 0:", sum(logic_check$should_be_zero), "\n")
-cat("Cases where VHT actually is 0:", sum(logic_check$actually_zero), "\n")
-cat("Cases where calculation is correct:", sum(logic_check$correct_calculation), "\n")
-cat("Total non-NA cases:", nrow(logic_check), "\n\n")
-
-#Look at the distribution of cases
-case_summary <- MN_selected_profiles %>%
-  filter(!is.na(VHT)) %>%
-  distinct(link_lagosid, date, .keep_all = TRUE) %>%
-  mutate(
-    case_type = case_when(
-      VHT == 0 ~ "No suitable habitat (VHT = 0)",
-      VHT > 0 ~ "Suitable habitat exists (VHT > 0)"
-    )
-  ) %>%
-  count(case_type)
-
-cat("Distribution of cases:\n")
-print(case_summary)
-
-# Check that VHT = o2_depth - temp_depth (should be TRUE for all rows)
-VHT_check <- MN_selected_profiles %>%
-  mutate(
-    calculated_VHT = pmax(0, o2_depth - temp_depth),
-    VHT_matches = abs(VHT - calculated_VHT) < 0.001  # Allow for small floating point errors
-  )
-
-cat("VHT calculation consistency:", all(VHT_check$VHT_matches), "\n")
-cat("Rows with VHT inconsistency:", sum(!VHT_check$VHT_matches), "\n")
-
-# Look at a few random profiles to manually verify logic
-set.seed(123)
-sample_profiles <- MN_selected_profiles %>%
-  select(link_lagosid, date) %>%
-  distinct() %>%
-  sample_n(5)
-
-# Check these profiles in detail
-for(i in 1:nrow(sample_profiles)) {
-  profile_data <- MN_selected_profiles %>%
-    filter(link_lagosid == sample_profiles$link_lagosid[i],
-           date == sample_profiles$date[i]) %>%
-    arrange(depth_m) %>%
-    select(depth_m, temp_c, do_ppm, temp_depth, o2_depth, VHT)
-  
-  cat("\n=== Profile", i, "===\n")
-  cat("Lake:", sample_profiles$link_lagosid[i], "Date:", sample_profiles$date[i], "\n")
-  print(profile_data)
-  
-  # Check if temp_depth makes sense
-  first_temp_22 <- profile_data %>%
-    filter(temp_c <= 22, depth_m >= 0) %>%
-    slice_head(n = 1) %>%
-    pull(depth_m)
-  
-  if(length(first_temp_22) > 0) {
-    cat("Expected temp_depth:", first_temp_22[1], "| Actual:", first(profile_data$temp_depth), "\n")
-  }
-  
-  # Check if o2_depth makes sense
-  first_o2_4 <- profile_data %>%
-    filter(do_ppm <= 4, depth_m >= 0) %>%
-    slice_head(n = 1) %>%
-    pull(depth_m)
-  
-  if(length(first_o2_4) > 0) {
-    cat("Expected o2_depth:", first_o2_4[1], "| Actual:", first(profile_data$o2_depth), "\n")
-  }
-}
-
-# Check for unrealistic values
-cat("\nDistribution checks:\n")
-cat("Profiles where temp_depth > max lake depth:\n")
-weird_temp <- MN_selected_profiles %>%
-  filter(temp_depth > lake_maxdepth_m) %>%
-  select(link_lagosid, date, temp_depth, lake_maxdepth_m) %>%
-  distinct()
-print(head(weird_temp))
-
-
-cat("Profiles where o2_depth > max lake depth:\n")
-weird_o2 <- MN_selected_profiles %>%
-  filter(o2_depth > lake_maxdepth_m) %>%
-  select(link_lagosid, date, o2_depth, lake_maxdepth_m) %>%
-  distinct()
-print(head(weird_o2))
-
-# Check for extreme VHT values
-cat("Profiles with VHT > 65m (potential outliers):\n")
-extreme_vht <- MN_selected_profiles %>%
-  filter(VHT > 65) %>%
-  select(link_lagosid, date, temp_depth, o2_depth, VHT, lake_maxdepth_m) %>%
-  distinct()
-print(extreme_vht)
-
-# Check for unrealistic values
-cat("\nDistribution checks:\n")
-cat("Profiles where temp_depth > max lake depth:\n")
-weird_temp <- MN_selected_profiles %>%
-  filter(temp_depth > lake_maxdepth_m) %>%
-  select(link_lagosid, date, temp_depth, lake_maxdepth_m) %>%
-  distinct()
-print(head(weird_temp))
-
-cat("Profiles where o2_depth > max lake depth:\n")
-weird_o2 <- MN_selected_profiles %>%
-  filter(o2_depth > lake_maxdepth_m) %>%
-  select(link_lagosid, date, o2_depth, lake_maxdepth_m) %>%
-  distinct()
-print(head(weird_o2))
-
-# Check for extreme VHT values
-cat("Profiles with VHT > 100m (potential outliers):\n")
-extreme_vht <- MN_selected_profiles %>%
-  filter(VHT > 100) %>%
-  select(link_lagosid, date, temp_depth, o2_depth, VHT, lake_maxdepth_m) %>%
-  distinct()
-print(extreme_vht)
-
-# Check that each profile has the same VHT values across all depths
-profile_consistency <- MN_selected_profiles %>%
-  group_by(link_lagosid, date) %>%
-  summarise(
-    unique_temp_depths = n_distinct(temp_depth),
-    unique_o2_depths = n_distinct(o2_depth),
-    unique_VHT = n_distinct(VHT),
-    .groups = "drop"
-  ) %>%
-  filter(unique_temp_depths > 1 | unique_o2_depths > 1 | unique_VHT > 1)
-
-cat("Profiles with inconsistent VHT values:", nrow(profile_consistency), "\n")
-if(nrow(profile_consistency) > 0) {
-  print(head(profile_consistency))
-}
-
-# Distribution of VHT values
-p1 <- ggplot(MN_selected_profiles %>% distinct(link_lagosid, date, .keep_all = TRUE), 
-             aes(x = VHT)) +
-  geom_histogram(bins = 50) +
-  labs(title = "Distribution of VHT values")
-
-print(p1)
-
-plot_data <- MN_selected_profiles %>% 
-  filter(!is.na(VHT)) %>%
-  distinct(link_lagosid, date, .keep_all = TRUE)
-
-ggplot(plot_data, aes(x = temp_depth, y = o2_depth, color = VHT)) +
-  geom_point(alpha = 0.6) +
-  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
-  scale_color_gradient(low = "blue", high = "yellow", name = "VHT") +
-  labs(title = "temp_depth vs o2_depth", 
-       subtitle = "Points below red line should have VHT = 0",
-       x = "Temperature Depth (m)", 
-       y = "Oxygen Depth (m)") +
-  theme_minimal()
-
-#assessment plots -----------------------------
-
-# Monthly patterns
-p1 <- MN_selected_profiles %>%
-  filter(!is.na(VHT)) %>%
-  distinct(link_lagosid, date, .keep_all = TRUE) %>%
-  ggplot(aes(x = factor(month), y = VHT)) +
-  geom_boxplot() +
-  labs(title = "VHT by Month", 
-       x = "Month", y = "VHT (m)") +
-  theme_minimal()
-
-print(p1)
-
-# Year-over-year trends
-p2 <- MN_selected_profiles %>%
-  filter(!is.na(VHT)) %>%
-  distinct(link_lagosid, date, .keep_all = TRUE) %>%
-  group_by(year) %>%
-  summarise(mean_VHT = mean(VHT, na.rm = TRUE),
-            median_VHT = median(VHT, na.rm = TRUE),
-            .groups = "drop") %>%
-  ggplot(aes(x = year)) +
-  geom_line(aes(y = mean_VHT, color = "Mean")) +
-  geom_line(aes(y = median_VHT, color = "Median")) +
-  labs(title = "VHT Trends Over Time", 
-       x = "Year", y = "VHT (m)", color = "Statistic") +
-  theme_minimal()
-
-print(p2)
-
-p3 <- MN_selected_profiles %>%
-  filter(!is.na(VHT)) %>%
-  distinct(link_lagosid, date, .keep_all = TRUE) %>%
-  ggplot(aes(x = lake_maxdepth_m, y = VHT)) +
-  geom_point(alpha = 0.5) +
-  geom_smooth(method = "lm", se = TRUE) +
-  labs(title = "VHT vs Lake Maximum Depth", 
-       x = "Lake Maximum Depth (m)", y = "VHT (m)") +
-  theme_minimal()
-
-print(p3)
-
-p8 <- MN_selected_profiles %>%
-  filter(!is.na(VHT)) %>%
-  distinct(link_lagosid, date, .keep_all = TRUE) %>%
-  mutate(
-    VHT_category = case_when(
-      VHT == 0 ~ "No Habitat",
-      VHT <= 2 ~ "Limited (0-2m)",
-      VHT <= 5 ~ "Moderate (2-5m)",
-      VHT <= 10 ~ "Good (5-10m)",
-      TRUE ~ "Excellent (>10m)"
-    ),
-    VHT_category = factor(VHT_category, levels = c("No Habitat", "Limited (0-2m)", 
-                                                   "Moderate (2-5m)", "Good (5-10m)", "Excellent (>10m)"))
-  ) %>%
-  ggplot(aes(x = VHT_category, fill = VHT_category)) +
-  geom_bar() +
-  labs(title = "Distribution of VHT Categories", 
-       x = "VHT Category", y = "Number of Profiles") +
-  theme_minimal() +
-  theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1))
-
-print(p8)
-
-library(maps)
-
-# Get Minnesota map
-minnesota <- map_data("state", region = "minnesota")
-
-
-# Seasonal VHT patterns
-seasonal_summary <- MN_selected_profiles %>%
-  filter(!is.na(VHT)) %>%
-  mutate(
-    season = case_when(
-      month %in% c(3, 4, 5) ~ "Spring", 
-      month %in% c(7, 8, 9, 10) ~ "Summer"
-    )
-  ) %>%
-  group_by(link_lagosid, latitude, longitude, season) %>%
-  summarise(
-    avg_VHT = mean(VHT, na.rm = TRUE),
-    n_profiles = n(),
-    .groups = "drop"
-  ) %>%
-  filter(n_profiles >= 2)  # Only lakes with multiple profiles per season
-
-ggplot() +
-  geom_polygon(data = minnesota, aes(x = long, y = lat, group = group), 
-               fill = "lightgray", color = "white") +
-  geom_point(data = seasonal_summary, aes(x = longitude, y = latitude, color = avg_VHT), 
-             size = 1.5, alpha = 0.7) +
-  scale_color_gradient(low = "blue", high = "red", name = "Average\nVHT (m)") +
-  facet_wrap(~season, ncol = 2) +
-  labs(title = "Seasonal VHT Patterns by Lake Location") +
-  coord_fixed(1.3) +
-  theme_void()
-
-# Map showing proportion of profiles with suitable habitat
-habitat_summary <- MN_selected_profiles %>%
-  filter(!is.na(VHT)) %>%
-  group_by(link_lagosid, latitude, longitude) %>%
-  summarise(
-    total_profiles = n(),
-    profiles_with_habitat = sum(VHT > 0),
-    prop_with_habitat = profiles_with_habitat / total_profiles,
-    avg_VHT_when_available = mean(VHT[VHT > 0], na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  filter(total_profiles >= 5)  # Only lakes with at least 5 profiles
-
-ggplot() +
-  geom_polygon(data = minnesota, aes(x = long, y = lat, group = group), 
-               fill = "lightgray", color = "white") +
-  geom_point(data = habitat_summary, 
-             aes(x = longitude, y = latitude, color = prop_with_habitat, size = total_profiles), 
-             alpha = 0.8) +
-  scale_color_gradient(low = "red", high = "green", name = "Proportion\nwith Habitat", 
-                       labels = scales::percent) +
-  scale_size_continuous(name = "Total\nProfiles", range = c(1, 4)) +
-  labs(title = "Proportion of Profiles with Suitable Habitat (VHT > 0)") +
-  coord_fixed(1.3) +
-  theme_void()
-
-
-# proceed -----------------
-
-#simplify
-MN_VHT_summary <- MN_selected_profiles %>%
-  group_by(link_lagosid, date, month, year) %>%
-  summarise(
-    temp_depth = first(temp_depth),
-    o2_depth = first(o2_depth),
-    VHT = first(VHT),
-    max_depth_sampled = max(depth_m, na.rm = TRUE),
-    lake_maxdepth = first(lake_maxdepth_m),
-    .groups = "drop"
-  )
-
-#calculate JAS and add to both predictor tables as VHT
-
-
-
-
-
-#look at full seasonality averages of VHT, north vs south MN
-
-
-
-
-
-
+#sessionInfo()
+#R version 4.3.1 (2023-06-16)
+#Platform: x86_64-apple-darwin20 (64-bit)
+#Running under: macOS 15.4.1
