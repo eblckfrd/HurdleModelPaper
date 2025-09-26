@@ -25,7 +25,7 @@ library(gridExtra)
 
 first_five_lakes <- MN_selected_profiles %>%
   distinct(link_lagosid) %>%
-  slice(1:5)
+  slice(5:10)
 
 firstfive_lakedata <- MN_selected_profiles %>%
   filter(link_lagosid %in% first_five_lakes$link_lagosid) %>%

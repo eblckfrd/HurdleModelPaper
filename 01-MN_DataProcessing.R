@@ -1,7 +1,7 @@
 # Dissertation Chapter 2 - MINNESOTA - started June 2025
 # Processing of Minnesota data from MGLP team (Mike, Gretchen Hansen, Heidi Rantala, Lesley Knoll)
 # Processing LAGOS data
-# Gathering and cleaning all other predictor data
+# Gathering and cleaning all lake predictor data
 
 # Load in packages
 
@@ -1385,7 +1385,7 @@ concurrent_waterq_predictors <- concurrent_waterq_predictors %>%
 ice_data <- ice_data %>%
   filter(winter.year >= 1980 & winter.year <= 2020)
 
-#how many lakes are there with ice data: 1244 
+#how many lakes are there with ice data: 1188 
 print(paste("Unique lake IDs:", length(unique(ice_data$DOW))))
 
 #ice duration processing; first trim down columns
@@ -1396,10 +1396,10 @@ ice_data <- ice_data %>%
 #pull data from full_MN_profiles and lagosne to try to find lagosid's for all DOW ice lakes
 testing_bridge <- LAGOSNE_lakeslocus101 %>%
   inner_join(
-    FULL_MN_profiles %>% distinct(nhdid = link_nhd_id, lagoslakeid = link_lagosid, state_ident),
+    FULL_MN_profiles %>% distinct(nhdid = link_nhd_id, lagoslakeid = link_lagosid, state_ident, latitude, longitude),
     by = c("nhdid", "lagoslakeid")
   ) %>%
-  select(lagoslakeid, nhdid, state_ident)
+  select(lagoslakeid, nhdid, state_ident, latitude, longitude)
 
 #now join using bridge
 ice_data <- ice_data %>%
@@ -1408,16 +1408,20 @@ ice_data <- ice_data %>%
     by = c("DOW" = "state_ident")
   )
 
-#how many DOWs are missing a lagos_id? #229
+#how many DOWs are missing a lagos_id? #222
 ice_data %>%
   filter(is.na(lagoslakeid)) %>%
   summarise(unique_DOWs_without_lagoslakeid = n_distinct(DOW))
 
 
 #how many lakes match?
-#there are 149 lakes in unique_lakeIDs that are missing from ice_data
+#there are 157 lakes in unique_lakeIDs that are missing from ice_data
 missing_lakes <- setdiff(unique_lakeIDs$link_lagosid, ice_data$lagoslakeid)
 cat("Number of lakes missing from ice_data:", length(missing_lakes), "\n")
+
+missing_lakes <- data.frame(
+  lagos_lakeid = missing_lakes
+)
 
 #plot to see on graph
 unique_lakeIDs$has_ice_data <- unique_lakeIDs$link_lagosid %in% ice_data$lagoslakeid
@@ -1503,135 +1507,8 @@ ggplot(unique_lakeIDs, aes(x = longitude, y = latitude, color = has_ice_data)) +
 #   )
 
 
-# Calculate CLIMATE PREDICTORS -----------------------------------------------------------------------------------------
 
-#PAR, surface wind speed, air temp, precip, ENSO, PDO, NAM, geopotential height 500
-
-#PDO index ----
-#PDO_index <- read.table("~/Desktop/Research/Data/Climate Index Data/PDO_index.txt", header = TRUE, sep = "", dec = ".")
-
-#may-june average
-PDO_index <- PDO_index %>%
-  mutate(MJ_Avg = rowMeans(select(., May, Jun), na.rm = TRUE))
-
-#JAS
-PDO_index <- PDO_index %>%
-  mutate(JAS_Avg = rowMeans(select(., Jul, Aug, Sep), na.rm = TRUE))
-
-#add all to full predictor datasets
-preseason_predictors <- preseason_waterq_predictors %>%
-  left_join(PDO_index %>% select(Year, Jun, MJ_Avg), 
-            by = c("year" = "Year")) %>%
-  rename(PDO_June = Jun, PDO_MJ = MJ_Avg)
-
-concurrent_predictors <- concurrent_waterq_predictors %>%
-  left_join(PDO_index %>% select(Year, Jul, JAS_Avg), 
-            by = c("year" = "Year")) %>%
-  rename(PDO_Jul = Jul, PDO_JAS = JAS_Avg)
-
-#NAM/AO index -------
-#AO_index <- read.table("~/Desktop/Research/Data/Climate Index Data/AO_index.txt", header = TRUE, sep = "", dec = ".")
-
-#may-june average
-AO_index <- AO_index %>%
-  mutate(MJ_Avg = rowMeans(select(., May, Jun), na.rm = TRUE))
-
-#JAS
-AO_index <- AO_index %>%
-  mutate(JAS_Avg = rowMeans(select(., Jul, Aug, Sep), na.rm = TRUE))
-
-#add all to full predictor datasets
-preseason_predictors <- preseason_predictors %>%
-  left_join(AO_index %>% select(Year, Jun, MJ_Avg), 
-            by = c("year" = "Year")) %>%
-  rename(AO_June = Jun, AO_MJ = MJ_Avg)
-
-concurrent_predictors <- concurrent_predictors %>%
-  left_join(AO_index %>% select(Year, Jul, JAS_Avg), 
-            by = c("year" = "Year")) %>%
-  rename(AO_Jul = Jul, AO_JAS = JAS_Avg)
-
-
-#Nino 3.4 index -----
-
-#Nino34_index <- read.table("~/Documents/R Repositories/Ch2_DataAnalysis/Nino3.4_Index.txt", header = TRUE, sep = "", dec = ".")
-
-#may-june average
-Nino34_index <- Nino34_index %>%
-  mutate(MJ_Avg = rowMeans(select(., May, Jun), na.rm = TRUE))
-
-#JAS
-Nino34_index <- Nino34_index %>%
-  mutate(JAS_Avg = rowMeans(select(., Jul, Aug, Sep), na.rm = TRUE))
-
-#add all to full predictor datasets
-preseason_predictors <- preseason_predictors %>%
-  left_join(Nino34_index %>% select(Year, Jun, MJ_Avg), 
-            by = c("year" = "Year")) %>%
-  rename(ENSO_June = Jun, ENSO_MJ = MJ_Avg)
-
-concurrent_predictors <- concurrent_predictors %>%
-  left_join(Nino34_index %>% select(Year, Jul, JAS_Avg), 
-            by = c("year" = "Year")) %>%
-  rename(ENSO_Jul = Jul, ENSO_JAS = JAS_Avg)
-
-#PNA index -------
-
-#PNA_index <- read.table("~/Documents/R Repositories/Ch2_DataAnalysis/PNA_Index.txt", header = TRUE, sep = "", dec = ".")
-
-#may-june average
-PNA_index <- PNA_index %>%
-  mutate(MJ_Avg = rowMeans(select(., May, Jun), na.rm = TRUE))
-
-#JAS
-PNA_index <- PNA_index %>%
-  mutate(JAS_Avg = rowMeans(select(., Jul, Aug, Sep), na.rm = TRUE))
-
-#add all to full predictor datasets
-preseason_predictors <- preseason_predictors %>%
-  left_join(PNA_index %>% select(Year, Jun, MJ_Avg), 
-            by = c("year" = "Year")) %>%
-  rename(PNA_June = Jun, PNA_MJ = MJ_Avg)
-
-concurrent_predictors <- concurrent_predictors %>%
-  left_join(PNA_index %>% select(Year, Jul, JAS_Avg), 
-            by = c("year" = "Year")) %>%
-  rename(PNA_Jul = Jul, PNA_JAS = JAS_Avg)
-
-#NAM index ----
-
-#NAM_index <- read.table("~/Documents/R Repositories/Ch2_DataAnalysis/NAM_Index.txt", header = TRUE, sep = "", dec = ".")
-
-#may-june average
-NAM_index <- NAM_index %>%
-  mutate(MJ_Avg = rowMeans(select(., May, Jun), na.rm = TRUE))
-
-#JAS
-NAM_index <- NAM_index %>%
-  mutate(JAS_Avg = rowMeans(select(., Jul, Aug, Sep), na.rm = TRUE))
-
-#add all to full predictor datasets
-preseason_predictors <- preseason_predictors %>%
-  left_join(NAM_index %>% select(Year, Jun, MJ_Avg), 
-            by = c("year" = "Year")) %>%
-  rename(NAM_June = Jun, NAM_MJ = MJ_Avg)
-
-concurrent_predictors <- concurrent_predictors %>%
-  left_join(NAM_index %>% select(Year, Jul, JAS_Avg), 
-            by = c("year" = "Year")) %>%
-  rename(NAM_Jul = Jul, NAM_JAS = JAS_Avg)
-
-#air temp and precip ----------
-
-#MN_precip
-
-
-#PAR, surface wind speed, geopotential height 500mb ------------
-
-
-
-
-# Continue on in R script 02-MN_VHT.R and then 03-MN_RFModels.R
+# Continue on in R script 1.5-MN_ClimatePredictors, then 02-MN_VHT.R, then 03-MN_RFModels.R
 
 #sessionInfo()
 #R version 4.3.1 (2023-06-16)
