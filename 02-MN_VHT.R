@@ -16,7 +16,7 @@ library(gridExtra)
 
 # Calculate VHT for 5 randomly selected lake profiles ----------------------------------------------------------------------------------------
 
-#calculate VHT function -------------
+#calculate VHT function 
 
 #Minnesota: based on TDO3… so 3mg/L and 21.5 C
 #from MDNR water quality standard guide
@@ -25,7 +25,7 @@ library(gridExtra)
 
 first_five_lakes <- MN_selected_profiles %>%
   distinct(link_lagosid) %>%
-  slice(5:10)
+  slice(200:205)
 
 firstfive_lakedata <- MN_selected_profiles %>%
   filter(link_lagosid %in% first_five_lakes$link_lagosid) %>%
@@ -87,13 +87,6 @@ firstfive_lakedata <- firstfive_lakedata %>%
 #check summary of results
 summary(firstfive_lakedata[c("temp_depth", "o2_depth", "VHT")])
 
-#temp_depth        o2_depth          VHT       
-#Min.   : 0.000   Min.   : 3.96   Min.   : 0.00  
-#1st Qu.: 0.170   1st Qu.:13.02   1st Qu.:10.92  
-#Median : 0.450   Median :21.95   Median :18.02  
-#Mean   : 2.537   Mean   :18.98   Mean   :16.49  
-#3rd Qu.: 4.970   3rd Qu.:24.03   3rd Qu.:21.90  
-#Max.   :15.940   Max.   :28.95   Max.   :28.92
 
 #simplify
 profile_summary <- firstfive_lakedata %>%
@@ -146,15 +139,54 @@ vht_seasonal_plot <- ggplot(monthly_vht, aes(x = month, y = mean_VHT, color = fa
 print(vht_seasonal_plot)
 
 # Calculate VHT for full lake profiles ----------------------------------------------------------------------------------------
-#MN_selected_profiles 
+#Use MN_selected_profiles dataset
 
-MN_selected_profiles <- MN_selected_profiles %>%
+#check for any missing O2 or temp data
+
+missing_data_summary <- MN_selected_profiles %>%
+  group_by(link_lagosid, date) %>%
+  summarise(
+    has_temp = any(!is.na(temp_c)),
+    has_o2 = any(!is.na(do_ppm)),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    missing_category = case_when(
+      !has_temp & !has_o2 ~ "Missing both",
+      !has_temp ~ "Missing temp only",
+      !has_o2 ~ "Missing O2 only",
+      TRUE ~ "Has both"
+    )
+  )
+
+# Check the overlap
+table(missing_data_summary$missing_category)
+
+#Has both   Missing O2 only Missing temp only 
+#25908              4462               990
+
+
+#Switching here to using MN_VHT_calculator going forward
+
+#filter to only keep only profiles with BOTH temp and O2
+MN_VHT_calculator <- MN_VHT_calculator %>%
+  group_by(link_lagosid, date) %>%
+  filter(
+    any(!is.na(temp_c)) & any(!is.na(do_ppm))
+  ) %>%
+  ungroup()
+
+#now calculate VHT
+MN_VHT_calculator <- MN_VHT_calculator %>%
   group_by(link_lagosid, date, month, year) %>%
   arrange(link_lagosid, date, depth_m) %>%
   
   # Calculate temp_depth: first depth where temp_c <= 22
   mutate(
     temp_depth = {
+      if (all(is.na(temp_c))) {
+        NA_real_
+      } else {
       valid_indices <- which(temp_c <= 22 & depth_m >= 0 & !is.na(temp_c))
       if (length(valid_indices) == 0) {
         # If temp never reaches 22°C, use the maximum depth (no suitable cool water)
@@ -163,6 +195,7 @@ MN_selected_profiles <- MN_selected_profiles %>%
                max(depth_m[depth_m >= 0], na.rm = TRUE))
       } else {
         pmax(0, depth_m[valid_indices[1]])
+      }
       }
     }
   ) %>%
@@ -198,33 +231,46 @@ MN_selected_profiles <- MN_selected_profiles %>%
   ungroup()
 
 #check summary of results
-summary(MN_selected_profiles[c("temp_depth", "o2_depth", "VHT")])
+summary(MN_VHT_calculator[c("temp_depth", "o2_depth", "VHT")])
 
-#temp_depth        o2_depth          VHT        
-#Min.   : 0.000   Min.   : 0.00   Min.   : 0.000  
-#1st Qu.: 0.000   1st Qu.: 5.00   1st Qu.: 1.000  
-#Median : 0.230   Median : 7.00   Median : 6.000  
-#Mean   : 2.085   Mean   :10.60   Mean   : 8.665  
-#3rd Qu.: 4.020   3rd Qu.:11.00   3rd Qu.:10.333  
-#Max.   :22.894   Max.   :63.36   Max.   :63.359
+#temp_depth        o2_depth           VHT        
+#Min.   : 0.000   Min.   : 0.000   Min.   : 0.000  
+#1st Qu.: 0.000   1st Qu.: 5.000   1st Qu.: 0.000  
+#Median : 0.500   Median : 7.000   Median : 5.000  
+#Mean   : 2.217   Mean   : 8.672   Mean   : 6.648  
+#3rd Qu.: 4.064   3rd Qu.:10.000   3rd Qu.: 9.000  
+#Max.   :30.000   Max.   :56.038   Max.   :56.038 
+
+#plot
+MN_VHT_calculator %>%
+  group_by(link_lagosid, date) %>%
+  slice(1) %>%
+  ungroup() %>%
+  select(temp_depth, o2_depth) %>%
+  pivot_longer(everything(), names_to = "metric", values_to = "depth") %>%
+  ggplot(aes(x = depth, fill = metric)) +
+  geom_histogram(alpha = 0.6, position = "identity", bins = 50) +
+  theme_minimal() +
+  labs(title = "Distribution of temp_depth vs o2_depth",
+       x = "Depth (m)", y = "Count")
 
 ##QC CHECKS ------------------------------------------------------------------------------
 
 # Check for any remaining issues
 cat("Data integrity checks:\n")
-cat("Any negative temp_depth:", any(MN_selected_profiles$temp_depth < 0, na.rm = TRUE), "\n")
-cat("Any negative o2_depth:", any(MN_selected_profiles$o2_depth < 0, na.rm = TRUE), "\n")
-cat("Any negative VHT:", any(MN_selected_profiles$VHT < 0, na.rm = TRUE), "\n")
-cat("Any NA values in temp_depth:", sum(is.na(MN_selected_profiles$temp_depth)), "\n")
-cat("Any NA values in o2_depth:", sum(is.na(MN_selected_profiles$o2_depth)), "\n")
-cat("Any NA values in VHT:", sum(is.na(MN_selected_profiles$VHT)), "\n")
+cat("Any negative temp_depth:", any(MN_VHT_calculator$temp_depth < 0, na.rm = TRUE), "\n")
+cat("Any negative o2_depth:", any(MN_VHT_calculator$o2_depth < 0, na.rm = TRUE), "\n")
+cat("Any negative VHT:", any(MN_VHT_calculator$VHT < 0, na.rm = TRUE), "\n")
+cat("Any NA values in temp_depth:", sum(is.na(MN_VHT_calculator$temp_depth)), "\n")
+cat("Any NA values in o2_depth:", sum(is.na(MN_VHT_calculator$o2_depth)), "\n")
+cat("Any NA values in VHT:", sum(is.na(MN_VHT_calculator$VHT)), "\n")
 
 cat("Validation checks:\n")
-cat("Profiles with NA oxygen data:", sum(is.na(MN_selected_profiles$o2_depth)), "\n")
-cat("Profiles with NA VHT:", sum(is.na(MN_selected_profiles$VHT)), "\n")
-cat("NAs match (should be TRUE):", sum(is.na(MN_selected_profiles$o2_depth)) == sum(is.na(MN_selected_profiles$VHT)), "\n\n")
+cat("Profiles with NA oxygen data:", sum(is.na(MN_VHT_calculator$o2_depth)), "\n")
+cat("Profiles with NA VHT:", sum(is.na(MN_VHT_calculator$VHT)), "\n")
+cat("NAs match (should be TRUE):", sum(is.na(MN_VHT_calculator$o2_depth)) == sum(is.na(MN_VHT_calculator$VHT)), "\n\n")
 
-logic_check <- MN_selected_profiles %>%
+logic_check <- MN_VHT_calculator %>%
   filter(!is.na(VHT)) %>%
   mutate(
     # VHT should be 0 when temp_depth >= o2_depth
@@ -242,7 +288,7 @@ cat("Cases where calculation is correct:", sum(logic_check$correct_calculation),
 cat("Total non-NA cases:", nrow(logic_check), "\n\n")
 
 #Look at the distribution of cases
-case_summary <- MN_selected_profiles %>%
+case_summary <- MN_VHT_calculator %>%
   filter(!is.na(VHT)) %>%
   distinct(link_lagosid, date, .keep_all = TRUE) %>%
   mutate(
@@ -256,8 +302,11 @@ case_summary <- MN_selected_profiles %>%
 cat("Distribution of cases:\n")
 print(case_summary)
 
+#No suitable habitat (VHT = 0)      7951
+#Suitable habitat exists (VHT > 0) 17957
+
 # Check that VHT = o2_depth - temp_depth (should be TRUE for all rows)
-VHT_check <- MN_selected_profiles %>%
+VHT_check <- MN_VHT_calculator %>%
   mutate(
     calculated_VHT = pmax(0, o2_depth - temp_depth),
     VHT_matches = abs(VHT - calculated_VHT) < 0.001  # Allow for small floating point errors
@@ -268,14 +317,14 @@ cat("Rows with VHT inconsistency:", sum(!VHT_check$VHT_matches), "\n")
 
 # Look at a few random profiles to manually verify logic
 set.seed(123)
-sample_profiles <- MN_selected_profiles %>%
+sample_profiles <- MN_VHT_calculator %>%
   select(link_lagosid, date) %>%
   distinct() %>%
   sample_n(5)
 
 # Check these profiles in detail
 for(i in 1:nrow(sample_profiles)) {
-  profile_data <- MN_selected_profiles %>%
+  profile_data <- MN_VHT_calculator %>%
     filter(link_lagosid == sample_profiles$link_lagosid[i],
            date == sample_profiles$date[i]) %>%
     arrange(depth_m) %>%
@@ -309,7 +358,7 @@ for(i in 1:nrow(sample_profiles)) {
 # Check for unrealistic values
 cat("\nDistribution checks:\n")
 cat("Profiles where temp_depth > max lake depth:\n")
-weird_temp <- MN_selected_profiles %>%
+weird_temp <- MN_VHT_calculator %>%
   filter(temp_depth > lake_maxdepth_m) %>%
   select(link_lagosid, date, temp_depth, lake_maxdepth_m) %>%
   distinct()
@@ -317,7 +366,7 @@ print(head(weird_temp))
 
 
 cat("Profiles where o2_depth > max lake depth:\n")
-weird_o2 <- MN_selected_profiles %>%
+weird_o2 <- MN_VHT_calculator %>%
   filter(o2_depth > lake_maxdepth_m) %>%
   select(link_lagosid, date, o2_depth, lake_maxdepth_m) %>%
   distinct()
@@ -325,7 +374,7 @@ print(head(weird_o2))
 
 # Check for extreme VHT values
 cat("Profiles with VHT > 65m (potential outliers):\n")
-extreme_vht <- MN_selected_profiles %>%
+extreme_vht <- MN_VHT_calculator %>%
   filter(VHT > 65) %>%
   select(link_lagosid, date, temp_depth, o2_depth, VHT, lake_maxdepth_m) %>%
   distinct()
@@ -334,21 +383,21 @@ print(extreme_vht)
 # Check for unrealistic values
 cat("\nDistribution checks:\n")
 cat("Profiles where temp_depth > max lake depth:\n")
-weird_temp <- MN_selected_profiles %>%
+weird_temp <- MN_VHT_calculator %>%
   filter(temp_depth > lake_maxdepth_m) %>%
   select(link_lagosid, date, temp_depth, lake_maxdepth_m) %>%
   distinct()
 print(head(weird_temp))
 
 cat("Profiles where o2_depth > max lake depth:\n")
-weird_o2 <- MN_selected_profiles %>%
+weird_o2 <- MN_VHT_calculator %>%
   filter(o2_depth > lake_maxdepth_m) %>%
   select(link_lagosid, date, o2_depth, lake_maxdepth_m) %>%
   distinct()
 print(head(weird_o2))
 
 # Check that each profile has the same VHT values across all depths
-profile_consistency <- MN_selected_profiles %>%
+profile_consistency <- MN_VHT_calculator %>%
   group_by(link_lagosid, date) %>%
   summarise(
     unique_temp_depths = n_distinct(temp_depth),
@@ -364,14 +413,14 @@ if(nrow(profile_consistency) > 0) {
 }
 
 # Distribution of VHT values
-p1 <- ggplot(MN_selected_profiles %>% distinct(link_lagosid, date, .keep_all = TRUE), 
+p1 <- ggplot(MN_VHT_calculator %>% distinct(link_lagosid, date, .keep_all = TRUE), 
              aes(x = VHT)) +
   geom_histogram(bins = 50) +
   labs(title = "Distribution of VHT values")
 
 print(p1)
 
-plot_data <- MN_selected_profiles %>% 
+plot_data <- MN_VHT_calculator %>% 
   filter(!is.na(VHT)) %>%
   distinct(link_lagosid, date, .keep_all = TRUE)
 
@@ -388,7 +437,7 @@ ggplot(plot_data, aes(x = temp_depth, y = o2_depth, color = VHT)) +
 #assessment plots -----------------------------
 
 # Monthly patterns
-p1 <- MN_selected_profiles %>%
+p1 <- MN_VHT_calculator %>%
   filter(!is.na(VHT)) %>%
   distinct(link_lagosid, date, .keep_all = TRUE) %>%
   ggplot(aes(x = factor(month), y = VHT)) +
@@ -402,10 +451,9 @@ print(p1)
 # Year-over-year trends
 
 # Join the datasets to get geographic position for each lake
-VHT_with_geo <- MN_selected_profiles %>%
+VHT_with_geo <- MN_VHT_calculator %>%
   left_join(unique_lakeIDs, by = c("link_lagosid" = "lagoslakeid"))
 
-## FIND OUT WHY 2019 IS BEING WEIRD - LOTS OF 0'S
 
 # Year-over-year trends by geographic position
 p2 <- VHT_with_geo %>%
@@ -425,28 +473,19 @@ p2 <- VHT_with_geo %>%
 
 print(p2)
 
-# Get unique profiles with their VHT values from 2019
-profiles_with_vht_2019 <- MN_selected_profiles %>%
-  filter(year == 2019) %>%
-  distinct(profile_ident, .keep_all = TRUE) %>%
-  select(profile_ident, VHT, date, link_lagosid) %>%
-  arrange(profile_ident)
-
-print(profiles_with_vht_2019)
-
-p3 <- MN_selected_profiles %>%
+p3 <- MN_VHT_calculator %>%
   filter(!is.na(VHT)) %>%
   distinct(link_lagosid, date, .keep_all = TRUE) %>%
   ggplot(aes(x = lake_maxdepth_m, y = VHT)) +
   geom_point(alpha = 0.5) +
-  geom_smooth(method = "lm", se = TRUE) +
+#  geom_smooth(method = "lm", se = TRUE) +
   labs(title = "VHT vs Lake Maximum Depth", 
        x = "Lake Maximum Depth (m)", y = "VHT (m)") +
   theme_minimal()
 
 print(p3)
 
-p8 <- MN_selected_profiles %>%
+p8 <- MN_VHT_calculator %>%
   filter(!is.na(VHT)) %>%
   distinct(link_lagosid, date, .keep_all = TRUE) %>%
   mutate(
@@ -476,11 +515,11 @@ minnesota <- map_data("state", region = "minnesota")
 
 
 # Seasonal VHT patterns
-seasonal_summary <- MN_selected_profiles %>%
+seasonal_summary <- MN_VHT_calculator %>%
   filter(!is.na(VHT)) %>%
   mutate(
     season = case_when(
-      month %in% c(3, 4, 5) ~ "Spring", 
+      month %in% c(3, 4, 5, 6) ~ "Spring", 
       month %in% c(7, 8, 9, 10) ~ "Summer"
     )
   ) %>%
@@ -500,33 +539,6 @@ ggplot() +
   scale_color_gradient(low = "blue", high = "red", name = "Average\nVHT (m)") +
   facet_wrap(~season, ncol = 2) +
   labs(title = "Seasonal VHT Patterns by Lake Location") +
-  coord_fixed(1.3) +
-  theme_void()
-
-# Map showing proportion of profiles with suitable habitat
-habitat_summary <- MN_selected_profiles %>%
-  filter(!is.na(VHT)) %>%
-  group_by(link_lagosid, latitude, longitude) %>%
-  summarise(
-    total_profiles = n(),
-    profiles_with_habitat = sum(VHT > 0),
-    prop_with_habitat = profiles_with_habitat / total_profiles,
-    avg_VHT_when_available = mean(VHT[VHT > 0], na.rm = TRUE),
-    avg_VHT_all = mean(VHT, na.rm = TRUE),  # Average VHT including zeros
-    .groups = "drop"
-  ) %>%
-  filter(total_profiles >= 5)
-
-ggplot() +
-  geom_polygon(data = minnesota, aes(x = long, y = lat, group = group), 
-               fill = "grey90", color = "white") +  # Lighter grey
-  geom_point(data = habitat_summary, 
-             aes(x = longitude, y = latitude, color = prop_with_habitat, size = total_profiles), 
-             alpha = 0.8) +
-  scale_color_gradient(low = "tomato", high = "blue2", name = "Proportion\nwith Habitat", 
-                       labels = scales::percent) +
-  scale_size_continuous(name = "Total\nProfiles", range = c(1, 4)) +
-  labs(title = "Proportion of Profiles with Suitable Habitat (VHT > 0)") +
   coord_fixed(1.3) +
   theme_void()
 
@@ -552,7 +564,7 @@ ggplot() +
 # proceed -----------------
 
 #simplify
-MN_VHT_summary <- MN_selected_profiles %>%
+MN_VHT_summary <- MN_VHT_calculator %>%
   group_by(link_lagosid, date, month, year) %>%
   summarise(
     temp_depth = first(temp_depth),
@@ -563,6 +575,93 @@ MN_VHT_summary <- MN_selected_profiles %>%
     .groups = "drop"
   )
 
-#calculate JAS
+#calculate August, and JAS
 
+VHT_JAS <- MN_VHT_summary %>%
+  # Filter for July, August, September only
+  filter(month %in% c(7, 8, 9)) %>%
+  group_by(link_lagosid, year) %>%
+  summarise(
+    # July/August/September average
+    JAS_VHT = mean(VHT, na.rm = TRUE),
+    
+    .groups = "drop"
+  )
 
+summary(VHT_JAS)
+
+#histogram
+ggplot(concurrent_VHT, aes(x = JAS_VHT)) +
+  geom_histogram(bins = 30, fill = "steelblue", color = "white") +
+  theme_minimal()
+
+#look at map plot
+
+lake_VHT_map <- MN_VHT_calculator %>%
+  select(link_lagosid, latitude, longitude) %>%
+  distinct() %>%
+  left_join(
+    VHT_JAS %>%
+      group_by(link_lagosid) %>%
+      summarise(mean_JAS_VHT = mean(JAS_VHT, na.rm = TRUE), .groups = "drop"),
+    by = "link_lagosid"
+  )
+
+ggplot() +
+  geom_polygon(data = minnesota, aes(x = long, y = lat, group = group),
+               fill = "white", color = "black") +
+  # Lake points colored by VHT
+  geom_point(data = lake_VHT_map, 
+             aes(x = longitude, y = latitude, color = mean_JAS_VHT),
+             size = 2, alpha = 0.7) +
+  scale_color_viridis_c(name = "JAS VHT (m)", option = "plasma") +
+  theme_minimal() +
+  coord_fixed(1.3) +
+  labs(
+    title = "July-August-September VHT across Minnesota Lakes",
+    x = "Longitude",
+    y = "Latitude"
+  )
+
+mean_VHT_by_year <- concurrent_VHT %>%
+  group_by(year) %>%
+  summarise(mean_VHT = mean(JAS_VHT, na.rm = TRUE), .groups = "drop")
+
+# Create the plot
+ggplot() +
+  # Individual lake lines (thin and transparent)
+  geom_line(data = concurrent_VHT, 
+            aes(x = year, y = JAS_VHT, group = link_lagosid),
+            alpha = 0.2, color = "gray50") +
+  # Mean line (thick and prominent)
+  geom_line(data = mean_VHT_by_year, 
+            aes(x = year, y = mean_VHT),
+            color = "red", size = 1.5) +
+  geom_point(data = mean_VHT_by_year, 
+             aes(x = year, y = mean_VHT),
+             color = "red", size = 3) +
+  theme_minimal() +
+  labs(
+    title = "July-August-September VHT Over Time",
+    subtitle = "Gray lines: individual lakes | Red line: mean across all lakes",
+    x = "Year",
+    y = "JAS VHT (m)"
+  )
+
+#need to get 25 random lakes and put into csv to transfer over to python
+
+#use VHT_JAS
+
+#new dataset called lake_VHT, with lagoslakeid, VHT, latitude, longitude, and year
+
+lake_VHT <- VHT_JAS %>%
+  left_join(unique_lakeIDs, by = c("link_lagosid" = "lagoslakeid")) %>%
+  select(
+    lagoslakeid = link_lagosid,
+    VHT = JAS_VHT,
+    latitude = latitude,
+    longitude = longitude,
+    year = year
+  )
+
+write.csv(lake_VHT, file = "~/Desktop/lake_VHT.csv", row.names = FALSE)

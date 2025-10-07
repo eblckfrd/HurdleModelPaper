@@ -20,7 +20,7 @@ library(mgcv)
 
 # Load in MN_profiles data from Gretchen's shared google drive
 
-#FULL_MN_profiles <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/MN_profiles.csv")
+FULL_MN_profiles <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/MN_profiles.csv")
 
 #-----------------------
 
@@ -28,22 +28,22 @@ library(mgcv)
 #was originally using only LAGOS-NE data but it is less up to date than LAGOS-US
 #so for water quality I can pull full country then filter to just my selected lakes, and later merge NE with US pre 2012 and post 2012
 
-#LAGOSNE_state_105 <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/LAGOSNE_state_105.csv")
+LAGOSNE_state_105 <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/LAGOSNE_state_105.csv")
         #state IDs
-#LAGOSNE_lakeslocus101 <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/LAGOSNE_lakeslocus101.csv")
+LAGOSNE_lakeslocus101 <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/LAGOSNE_lakeslocus101.csv")
          #lagos ID, name, lake area, lake perim, hu zones, elevation, stat and county zone id
-#lake_characteristics <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/lake_characteristics.csv")
+lake_characteristics <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/lake_characteristics.csv")
         #hydrology/lake connectivity
-#epi_waterquality10873 <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/epi_waterquality10873.csv")
+epi_waterquality10873 <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/epi_waterquality10873.csv")
         #LAGOS-NE water quality params
-#chemistry_limno <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/chemistry_limno.csv")
+chemistry_limno <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/chemistry_limno.csv")
       #this is from LAGOS-US, all water quality parameters
 
 #-----------------------
 
 #ice duration from Minnesota Lake Ice Phenology dataset: https://conservancy.umn.edu/items/940c6197-486b-437c-96ca-cca9b4534dfa
 
-#ice_data <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/ice_duration.csv")
+ice_data <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/ice_duration.csv")
 
 #DOW : Department of Waterbody Lake ID
 #winter.year : If the ice came on in fall of 2000 and melted in spring of 2001 the winter.year variable would be 2001
@@ -56,22 +56,13 @@ library(mgcv)
 # Only keep columns that are needed
 # Filter for only lakes that stratify-- filter for geom ratio <4 (ratio already calculated in profiles dataset)
 
-MN_profiles <- FULL_MN_profiles %>% #takes data down to 714,410 and 159 variables
+MN_profiles <- FULL_MN_profiles %>% #takes data down to 714,410 and 19 variables
   dplyr::select(link_lagosid, year, date, doy, latitude, longitude, 
                 monitoringlocationidentifier, monitoringlocationname,
                 profile_ident, n_dep_inprofile,
                 depth_m, temp_c, do_ppm, lake_geomratio, lake_maxdepth_m, lake_area_m2,
                 flag_do, flag_temp, flag_dep_diff) %>%
   filter(lake_geomratio <= "4") 
-
-#look at 2019 to see if there are missing values?
-values_2019 <- MN_profiles_final %>%
-  filter(year == 2019) %>%
-  distinct(profile_ident, .keep_all = TRUE) %>%
-  select(date, link_lagosid, profile_ident, n_dep_inprofile, depth_m, temp_c, do_ppm ) %>%
-  arrange(profile_ident)
-
-print(profiles_with_vht_2019)
 
 #rename just so i can run the borrowed code from Mike below
 MN_profiles <- MN_profiles %>%
@@ -359,8 +350,8 @@ print("Filtering Summary:")
 print(paste("Total lakes after initial filtering:", length(unique(MN_profiles_filtered$link_lagosid)))) #436
 print(paste("Lakes classified as stable below 10m:", length(stable_lakes))) #145
 print(paste("Lakes in final dataset:", length(unique(MN_profiles_final$link_lagosid)))) #391
-print(paste("Total profiles after initial filtering:", nrow(MN_profiles_filtered))) #408748
-print(paste("Total profiles in final dataset:", nrow(MN_profiles_final))) #335089
+print(paste("Total profiles after initial filtering:", nrow(MN_profiles_filtered))) #408770
+print(paste("Total profiles in final dataset:", nrow(MN_profiles_final))) #335111
 
 
 # Check what depth coverage we're getting in non-stable lakes
@@ -816,7 +807,7 @@ unique_lakeIDs <- unique_lakeIDs %>%
 unique_lakeIDs <- unique_lakeIDs %>%
   mutate(TSI = 60 - (14.41 * log(secchi)))
 
-#remove the 1 secchi depth of 0 (max depth of 1m) resulted in inf, takes us down to 409 lakes
+#remove any secchi depth of 0 (max depth of 1m) cause results in inf
 unique_lakeIDs <- unique_lakeIDs %>%
   filter(is.finite(TSI))
 
@@ -838,7 +829,7 @@ unique_lakeIDs <- unique_lakeIDs %>%
 table(unique_lakeIDs$trophic_state)
 
 #Eutrophic  Mesotrophic Oligotrophic 
-#185          141           83
+#180          123          57
 
 
 #color histogram by trophic state
@@ -913,14 +904,22 @@ MN_profiles <- MN_profiles[
       (MN_profiles$link_lagosid == 381 & MN_profiles$date == "2006-07-24") |
       (MN_profiles$link_lagosid == 1171 & MN_profiles$date == "2013-07-16")), ]
 
+#and in final dataset
+
+MN_selected_profiles <- MN_selected_profiles[
+  !((MN_selected_profiles$link_lagosid == 305 & MN_selected_profiles$date == "2017-06-07") |
+      (MN_selected_profiles$link_lagosid == 305 & MN_selected_profiles$date == "2017-08-29") |
+      (MN_selected_profiles$link_lagosid == 381 & MN_selected_profiles$date == "2006-07-24") |
+      (MN_selected_profiles$link_lagosid == 1171 & MN_selected_profiles$date == "2013-07-16")), ]
+
 
 #depth category -----------------------------
 
 #use 33% quantiles as shallow and deep cutoffs
 #this aligns with <10m or less being shallow for stratifying lakes
 
-mean_depth <- mean(unique_lakeIDs$lake_maxdepth_m, na.rm = TRUE) #14.3
-sd_depth <- sd(unique_lakeIDs$lake_maxdepth_m, na.rm = TRUE) #9.4
+mean_depth <- mean(unique_lakeIDs$lake_maxdepth_m, na.rm = TRUE) #12.8
+sd_depth <- sd(unique_lakeIDs$lake_maxdepth_m, na.rm = TRUE) #8.3
 
 cutoffs <- quantile(unique_lakeIDs$lake_maxdepth_m, probs = c(0.33, 0.66), na.rm = TRUE)
 
@@ -949,19 +948,19 @@ ggplot(unique_lakeIDs, aes(x = lake_maxdepth_m)) +
 table(unique_lakeIDs$depth_category)
 
 #Deep  Medium Shallow 
-#139     134     134
+#123     118     119
 
 #count categories; there is some crossover, but not entirely 
 unique_lakeIDs %>%
   count(trophic_state, depth_category)
 
-#Eutrophic     Deep              21
-#Eutrophic     Medium            63
-#Eutrophic     Shallow           101
+#Eutrophic     Deep              31
+#Eutrophic     Medium            60
+#Eutrophic     Shallow           89
 
-#Oligotrophic  Deep              60
-#Oligotrophic  Medium            21
-#Oligotrophic  Shallow            2
+#Oligotrophic  Deep              37
+#Oligotrophic  Medium            17
+#Oligotrophic  Shallow            3
 
 
 #now for hydrology category, seepage (or "isolated" vs. drainage)
@@ -977,7 +976,7 @@ lake_characteristics <- lake_characteristics %>%
 table(lake_characteristics$lake_connectivity_permanent)
 
 #Drainage DrainageLk  Headwater   Isolated   Terminal TerminalLk 
-#52        174         53        111         13          6
+#48        141         50          104        13          4
 
 
 #I AM DECIDING TO ONLY USE PERMANENT FLOW.... NOT CONSIDERING BOTH PERMAMENT AND INTERMITTENT-EPHERMERAL FLOW -------
@@ -986,21 +985,23 @@ table(lake_characteristics$lake_connectivity_permanent)
 table(lake_characteristics$lake_connectivity_fluctuates)
 
 #N   Y 
-#349  58
+#303  57
 
 #see how many is in each hydro column
 table(lake_characteristics$lake_connectivity_class)
 
 #Drainage DrainageLk  Headwater   Isolated   Terminal TerminalLk 
-#62        202         41         91          8          3
+#59        167         38         85          8          3
 
 
 #code definitions --
 #drainage: lake with inlets and outlets; no upstream lakes greater than or equal to 10 ha
 #drainagelk: lake with inlets and outlets; has upstream lakes greater than or equal to 10 ha
+#headwater: lake with only outlet
+#terminallk: lake with only inlet
 #isolated: lake with neither an inlet or an outlet
 
-#so i am going to combine drainage and drainagelk into one category? to get seepage vs. drainage
+#so i am going to combine drainage, drainagelk, headwater, and terminal into one category? to get seepage vs. drainage
 
 #merge in connectivity column --------------
 
@@ -1014,14 +1015,16 @@ unique_lakeIDs <- unique_lakeIDs %>%
     lake_connectivity_permanent == "Isolated" ~ "Seepage",
     lake_connectivity_permanent == "Drainage" ~ "Drainage",
     lake_connectivity_permanent == "DrainageLk" ~ "Drainage",
-    TRUE ~ "Other" 
+    lake_connectivity_permanent == "Headwater" ~ "Drainage",
+    lake_connectivity_permanent == "TerminalLk" ~ "Drainage",
+    lake_connectivity_permanent == "Terminal" ~ "Drainage"
   ))
 
 #see how many is in each column
 table(unique_lakeIDs$hydro_category)
 
-#Drainage    Other  Seepage 
-#226       72      111
+#Drainage  Seepage 
+#256        104
 
 ggplot(unique_lakeIDs, aes(x = hydro_category)) +
   geom_histogram(binwidth = 2, color = "black", fill = "skyblue", stat = "count") +
@@ -1031,7 +1034,6 @@ ggplot(unique_lakeIDs, aes(x = hydro_category)) +
        x = "Connectivity Type",
        y = "Number of Lakes") +
   theme_minimal()
-
 
 #missing lat and lon in unique_lakeIDs for lake 79457 -- pull from LAGOSNE_lakeslocus 101
 
@@ -1073,7 +1075,7 @@ unique_lakeIDs <- unique_lakeIDs %>%
 table(unique_lakeIDs$geo_position)
 
 #North South 
-#141   268
+#82   278
 
 
 ##make a figure for prelim proposal --------------------------------------------------
@@ -1323,7 +1325,7 @@ preseason_waterq_predictors <- LAGOSwaterquality %>%
     .groups = "drop"
   )
 
-#there are a lot of NaNs here... 28729
+#there are a lot of NaNs here... 29814
 sum(is.nan(as.matrix(preseason_waterq_predictors)))
 
 #see which columns they are mostly in: 
@@ -1333,7 +1335,7 @@ sapply(preseason_waterq_predictors, function(x) sum(is.nan(x)))
 #     3820       4136           6928        7159            129            388           6904           7086
 
 
-## TRIM down to only year for each lake that have profiles in MN_selectedprofiles
+## TRIM down to only years for each lake that have profiles in MN_selected_profiles
 preseason_waterq_predictors <- preseason_waterq_predictors %>%
   semi_join(
     MN_selected_profiles %>% distinct(lagoslakeid = link_lagosid, year),
@@ -1360,7 +1362,7 @@ concurrent_waterq_predictors <- LAGOSwaterquality %>%
     .groups = "drop"
   )
 
-#counts NaNs.. 29910
+#counts NaNs.. 31017
 sum(is.nan(as.matrix(concurrent_waterq_predictors))) 
 
 #see which columns they are mostly in: 
