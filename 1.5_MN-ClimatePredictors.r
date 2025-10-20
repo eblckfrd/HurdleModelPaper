@@ -1,5 +1,6 @@
-# Dissertation Chapter 2 - MINNESOTA - September 2026
-# Gathering and cleaning all climate predictor data
+# Dissertation Chapter 2 - MINNESOTA - September 2025
+# Gathering and cleaning climate predictor data
+# Note that large scale climate data is processed in jupyter hub notebooks
 
 # Load in packages
 
@@ -259,9 +260,6 @@ concurrent_predictors <- concurrent_predictors %>%
 #preseason_predictors: all processed pre-season predictors for June, and MJ
 
 
-# geopotential height, u-winds, and v winds ---------------------------------------------------
-
-
 
 #precipitation and temperature from MDNR according to watershed unit ------------------------------
 
@@ -271,8 +269,7 @@ concurrent_predictors <- concurrent_predictors %>%
 
 
 
-# Continue on in R script 02-MN_VHT.R then 03-MN_RFModels.R
-
+# Continue on in R script 02-MN_VHT.R then switch to jupyter hub notebooks
 #sessionInfo()
 #R version 4.3.1 (2023-06-16)
 #Platform: x86_64-apple-darwin20 (64-bit)

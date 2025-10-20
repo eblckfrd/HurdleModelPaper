@@ -11,6 +11,7 @@ library(broom)
 library(LAGOSNE)
 library(ggplot2)
 library(ggmap)
+library(hexbin)
 library(gridExtra)
 
 
@@ -434,21 +435,166 @@ ggplot(plot_data, aes(x = temp_depth, y = o2_depth, color = VHT)) +
        y = "Oxygen Depth (m)") +
   theme_minimal()
 
-#assessment plots -----------------------------
+# visualizations --------------------------------------------------------------------
 
-# Monthly patterns
-p1 <- MN_VHT_calculator %>%
+#seasonality in bar plots, truncuated at 25m
+
+MN_VHT_calculator %>%
   filter(!is.na(VHT)) %>%
   distinct(link_lagosid, date, .keep_all = TRUE) %>%
+  ggplot(aes(x = factor(month), y = VHT, fill = factor(month))) +
+  geom_boxplot(outlier.alpha = 0.3, outlier.size = 1) +
+  scale_fill_viridis_d(option = "viridis") +
+  scale_x_discrete(labels = month.abb) +
+  coord_cartesian(ylim = c(0, 25)) +  # Focus on 0-25m range
+  labs(title = "Seasonal Patterns in VHT", 
+       subtitle = "Y-axis truncated at 25m for clarity",
+       x = "Month", 
+       y = "VHT (m)") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+#same plot but in range of blues with jitter and transparency
+MN_VHT_calculator %>%
+  filter(!is.na(VHT), VHT <= 25) %>%
+  distinct(link_lagosid, date, .keep_all = TRUE) %>%
   ggplot(aes(x = factor(month), y = VHT)) +
-  geom_boxplot() +
-  labs(title = "VHT by Month", 
-       x = "Month", y = "VHT (m)") +
-  theme_minimal()
+  geom_jitter(aes(color = factor(month)), alpha = 0.3, width = 0.2, size = 0.8) +
+  geom_boxplot(aes(fill = factor(month)), alpha = 0.6, outlier.shape = NA, width = 0.5) +
+  scale_fill_manual(values = colorRampPalette(c("lightblue", "steelblue", "darkblue"))(12)) +
+  scale_color_manual(values = colorRampPalette(c("lightblue", "steelblue", "darkblue"))(12)) +
+  scale_x_discrete(labels = month.abb) +
+  labs(title = "Seasonal Patterns in VHT", 
+       x = "Month", 
+       y = "VHT (m)") +
+  theme_minimal() +
+  theme(legend.position = "none")
 
-print(p1)
 
-# Year-over-year trends
+#add all categories into dataset I am using to plot
+MN_VHT_calculator <- MN_VHT_calculator %>%
+  left_join(unique_lakeIDs %>% 
+            select(lagoslakeid, trophic_state, depth_category, hydro_category, geo_position),
+            by = c("link_lagosid" = "lagoslakeid"))
+
+
+#Now can plot seasonality differences based on categories ------------------------------------------------
+
+#Create loops to make plots for all the categories
+
+# Define categories to loop through
+categories <- list(
+  list(var = "hydro_category", values = c("Drainage", "Seepage")),
+  list(var = "trophic_state", values = c("Eutrophic", "Oligotrophic")),
+  list(var = "depth_category", values = c("Deep", "Shallow")),
+  list(var = "geo_position", values = c("South", "North"))
+)
+
+# Define categories to loop through
+categories <- list(
+  list(var = "hydro_category", values = c("Drainage", "Seepage"), title = "Hydrology"),
+  list(var = "trophic_state", values = c("Eutrophic", "Oligotrophic"), title = "Trophic State"),
+  list(var = "depth_category", values = c("Deep", "Shallow"), title = "Mean Depth"),
+  list(var = "geo_position", values = c("South", "North"), title = "Geographic Position")
+)
+
+# Loop through each category for line plots by year
+for (cat in categories) {
+  var_name <- cat$var
+  values <- cat$values
+  custom_title <- cat$title
+  
+  # Prepare the data first
+  plot_data <- MN_VHT_calculator %>%
+    filter(!is.na(VHT), VHT <= 25) %>%
+    filter(!!sym(var_name) %in% values) %>%
+    distinct(link_lagosid, date, .keep_all = TRUE) %>%
+    group_by(!!sym(var_name), year, month) %>%
+    summarise(mean_VHT = mean(VHT, na.rm = TRUE),
+              se_VHT = sd(VHT, na.rm = TRUE) / sqrt(n()), .groups = "drop")
+  
+  # Create the plot
+  p <- ggplot(plot_data, aes(x = month, y = mean_VHT, color = factor(year), group = year)) +
+    geom_line(linewidth = 1, alpha = 0.7) +
+    geom_point(size = 2) +
+    scale_color_viridis_d(option = "plasma") +
+    scale_x_continuous(breaks = 1:12, labels = month.abb) +  # Keep month abbreviations
+    facet_wrap(as.formula(paste("~", var_name))) +
+    labs(title = paste("Seasonal Patterns in VHT Across Years by", custom_title),
+         x = NULL,  # Remove "Month" label
+         y = "Mean VHT (m)") +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(face = "bold", size = 16),
+      legend.position = "none",  # Remove year legend
+      strip.text = element_text(size = 14, face = "bold"),  # Increase facet label size
+      axis.text = element_text(size = 14),  # Increase axis text size (includes months)
+      axis.text.x = element_text(size = 14),  # Specifically increase month labels
+      axis.title.y = element_text(size = 14, face = "bold")  # Make y-axis title bigger and bold
+    )
+  
+  print(p)
+  
+  # Save to desktop
+  #ggsave(filename = paste0("~/Desktop/", custom_title, "_Seasonal_Patterns.png"), 
+  #       plot = p, width = 10, height = 6, dpi = 300)
+}
+
+# Loop through each category for ribbon plots
+for (cat in categories) {
+  var_name <- cat$var
+  values <- cat$values
+  custom_title <- cat$title
+  
+  # Prepare the data first
+  plot_data <- MN_VHT_calculator %>%
+    filter(!is.na(VHT), VHT <= 25) %>%
+    filter(!!sym(var_name) %in% values) %>%
+    distinct(link_lagosid, date, .keep_all = TRUE) %>%
+    group_by(!!sym(var_name), month) %>%
+    summarise(mean_VHT = mean(VHT, na.rm = TRUE),
+              sd_VHT = sd(VHT, na.rm = TRUE), .groups = "drop")
+  
+  # Create the plot
+  p <- ggplot(plot_data, aes(x = month)) +
+    geom_ribbon(aes(ymin = mean_VHT - sd_VHT, ymax = mean_VHT + sd_VHT, 
+                    fill = !!sym(var_name)), 
+                alpha = 0.3) +
+    geom_line(aes(y = mean_VHT, color = !!sym(var_name)), linewidth = 1.5) +
+    scale_color_manual(values = c("steelblue", "darkblue")) +
+    scale_fill_manual(values = c("steelblue", "darkblue")) +
+    scale_x_continuous(breaks = 1:12, labels = month.abb) +  # Keep month abbreviations
+    labs(title = paste("Seasonal VHT Patterns by", custom_title),
+         subtitle = "Line shows mean, ribbon shows ±1 SD",
+         x = NULL,  # Remove "Month" label
+         y = "Mean VHT (m)", 
+         color = custom_title, 
+         fill = custom_title) +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(face = "bold", size = 16),
+      strip.text = element_text(size = 14, face = "bold"),  # Increase facet label size
+      axis.text = element_text(size = 14),  # Increase axis text size
+      axis.text.x = element_text(size = 14),  # Specifically increase month labels
+      axis.title.y = element_text(size = 14, face = "bold"),  # Make y-axis title bigger and bold
+      legend.key.size = unit(1.5, "cm"),  # Adjusts the size of the legend key (box)
+      legend.text = element_text(size = 14),  # Increase legend text
+      legend.title = element_text(size = 12, face = "bold")  # Increase legend title
+    )
+  
+  print(p)
+  
+  # Save to desktop
+  #ggsave(filename = paste0("~/Desktop/", custom_title, "_Ribbon_Plot.png"), 
+  #       plot = p, width = 10, height = 6, dpi = 300)
+}
+
+# Year-over-year trends by category
+
+
+
+
+# Year-over-year trend by geographic position ------------------------------------------------------------------
 
 # Join the datasets to get geographic position for each lake
 VHT_with_geo <- MN_VHT_calculator %>%
@@ -456,7 +602,7 @@ VHT_with_geo <- MN_VHT_calculator %>%
 
 
 # Year-over-year trends by geographic position
-p2 <- VHT_with_geo %>%
+VHT_with_geo %>%
   filter(!is.na(VHT), !is.na(geo_position)) %>%
   distinct(link_lagosid, date, .keep_all = TRUE) %>%
   group_by(year, geo_position) %>%
@@ -465,62 +611,37 @@ p2 <- VHT_with_geo %>%
   ggplot(aes(x = year, y = mean_VHT, color = geo_position)) +
   geom_line(size = 1) +
   labs(title = "VHT Trends: Northern vs Southern Lakes", 
-       x = "Year", 
+       x = NULL,
        y = "Mean VHT (m)", 
        color = "Geographic Position") +
   theme_minimal() +
-  scale_color_manual(values = c("North" = "#2E86C1", "South" = "#E74C3C"))
+  scale_color_manual(values = c("North" = "#2E86C1", "South" = "#E74C3C")) +
+  theme(
+    plot.title = element_text(face = "bold", size = 16),
+    strip.text = element_text(size = 14, face = "bold"),  # Increase facet label size
+    axis.text = element_text(size = 14),  # Increase axis text size
+    axis.text.x = element_text(size = 14),  # Specifically increase month labels
+    axis.title.y = element_text(size = 14, face = "bold"),  # Make y-axis title bigger and bold
+    legend.key.size = unit(1.5, "cm"),  # Adjusts the size of the legend key (box)
+    legend.text = element_text(size = 14),  # Increase legend text
+    legend.title = element_text(size = 14, face = "bold")  # Increase legend title
+  )
 
-print(p2)
-
-p3 <- MN_VHT_calculator %>%
-  filter(!is.na(VHT)) %>%
-  distinct(link_lagosid, date, .keep_all = TRUE) %>%
-  ggplot(aes(x = lake_maxdepth_m, y = VHT)) +
-  geom_point(alpha = 0.5) +
-#  geom_smooth(method = "lm", se = TRUE) +
-  labs(title = "VHT vs Lake Maximum Depth", 
-       x = "Lake Maximum Depth (m)", y = "VHT (m)") +
-  theme_minimal()
-
-print(p3)
-
-p8 <- MN_VHT_calculator %>%
-  filter(!is.na(VHT)) %>%
-  distinct(link_lagosid, date, .keep_all = TRUE) %>%
-  mutate(
-    VHT_category = case_when(
-      VHT == 0 ~ "No Habitat",
-      VHT <= 2 ~ "Limited (0-2m)",
-      VHT <= 5 ~ "Moderate (2-5m)",
-      VHT <= 10 ~ "Good (5-10m)",
-      TRUE ~ "Excellent (>10m)"
-    ),
-    VHT_category = factor(VHT_category, levels = c("No Habitat", "Limited (0-2m)", 
-                                                   "Moderate (2-5m)", "Good (5-10m)", "Excellent (>10m)"))
-  ) %>%
-  ggplot(aes(x = VHT_category, fill = VHT_category)) +
-  geom_bar() +
-  labs(title = "Distribution of VHT Categories", 
-       x = "VHT Category", y = "Number of Profiles") +
-  theme_minimal() +
-  theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1))
-
-print(p8)
+#plots on map ---------------------------------------------------------
 
 library(maps)
 
 # Get Minnesota map
 minnesota <- map_data("state", region = "minnesota")
-
+mn_map <- map_data("state", region = "minnesota")
 
 # Seasonal VHT patterns
 seasonal_summary <- MN_VHT_calculator %>%
   filter(!is.na(VHT)) %>%
   mutate(
     season = case_when(
-      month %in% c(3, 4, 5, 6) ~ "Spring", 
-      month %in% c(7, 8, 9, 10) ~ "Summer"
+      month %in% c(5, 6) ~ "Preseason", 
+      month %in% c(7, 8, 9) ~ "Concurrent"
     )
   ) %>%
   group_by(link_lagosid, latitude, longitude, season) %>%
@@ -529,39 +650,190 @@ seasonal_summary <- MN_VHT_calculator %>%
     n_profiles = n(),
     .groups = "drop"
   ) %>%
-  filter(n_profiles >= 2)  # Only lakes with multiple profiles per season
+  filter(n_profiles >= 4)  # Only lakes with multiple profiles per season
 
+#create table showing seasonal changes
+seasonal_change <- seasonal_summary %>%
+  filter(!is.na(season)) %>%  # Remove rows where season is NA
+  pivot_wider(
+    id_cols = c(link_lagosid, latitude, longitude),
+    names_from = season, 
+    values_from = avg_VHT,
+    values_fn = mean
+  ) %>%
+  filter(!is.na(Preseason) & !is.na(Concurrent)) %>%
+  mutate(VHT_change = Concurrent - Preseason)
+
+#summarize
+summary(seasonal_change$VHT_change)
+
+#plot changes on map
 ggplot() +
-  geom_polygon(data = minnesota, aes(x = long, y = lat, group = group), 
-               fill = "lightgray", color = "white") +
-  geom_point(data = seasonal_summary, aes(x = longitude, y = latitude, color = avg_VHT), 
-             size = 1.5, alpha = 0.7) +
-  scale_color_gradient(low = "blue", high = "red", name = "Average\nVHT (m)") +
-  facet_wrap(~season, ncol = 2) +
-  labs(title = "Seasonal VHT Patterns by Lake Location") +
-  coord_fixed(1.3) +
-  theme_void()
+  geom_polygon(data = mn_map, aes(x = long, y = lat, group = group), 
+               fill = "gray95", color = "gray50") +
+  geom_point(data = seasonal_change, 
+             aes(x = longitude, y = latitude, color = VHT_change),
+             size = 3, alpha = 0.8) +
+  scale_color_viridis_c(
+    option = "plasma",  # Try "plasma", "inferno", "magma", or "turbo"
+    limits = c(-5, 5),
+    oob = scales::squish,
+    name = "VHT Change (m)"
+  ) +
+  labs(title = "Seasonal Change in VHT Across Minnesota Lakes") +
+  coord_map() +
+  theme_minimal() +
+  theme(
+    axis.title = element_blank(),
+    axis.text = element_blank(),
+    panel.grid = element_blank(),
+    plot.title = element_text(face = "bold", size = 14)
+  )
 
-# Map 2: Average VHT at each location with capped scale
-habitat_summary_capped <- habitat_summary %>%
-  mutate(avg_VHT_capped = pmin(avg_VHT_all, 30))  # Cap values at 30m
 
+#show using hexbin to avoid dots overlapping
 ggplot() +
-  geom_polygon(data = minnesota, aes(x = long, y = lat, group = group), 
-               fill = "grey90", color = "white") +  # Lighter grey
-  geom_point(data = habitat_summary_capped, 
-             aes(x = longitude, y = latitude, color = avg_VHT_capped), 
-             alpha = 0.8, size = 2) +
-  scale_color_viridis_c(name = "Average\nVHT (m)", 
-                        limits = c(0, 30),
-                        breaks = c(0, 10, 20, 30),
-                        labels = c("0", "10", "20", "30+")) +
-  labs(title = "Average VHT at Each Lake Location (Capped at 30m)") +
-  coord_fixed(1.3) +
-  theme_void()
+  geom_polygon(data = mn_map, aes(x = long, y = lat, group = group), 
+               fill = "gray95", color = "gray50") +
+  stat_summary_hex(data = seasonal_change,
+                   aes(x = longitude, y = latitude, z = VHT_change),
+                   bins = 30, alpha = 0.8) +
+  scale_fill_distiller(
+    palette = "RdBu",
+    direction = 1,
+    limits = c(-5, 5),  # Symmetric around 0
+    oob = scales::squish,
+    name = "VHT Change (m)"
+  ) +
+  labs(title = "Regional Patterns in Seasonal VHT Change") +
+  coord_map() +
+  theme_minimal() +
+  theme(
+    axis.title = element_blank(),
+    axis.text = element_blank(),
+    panel.grid = element_blank()
+  )
+
+#investigate lakes that are showing increases...
+#how did these lakes make it this far?! they do not have 10 different years of data
+
+# Lakes with increases (VHT_change >= 0)
+increasing_lakes <- seasonal_change %>%
+  filter(VHT_change >= 0) %>%
+  arrange(desc(VHT_change))
+
+# View them
+View(increasing_lakes)
+
+increasing_vht <- increasing_lakes$link_lagosid
+
+MN_VHT_calculator %>%
+  filter(link_lagosid %in% increasing_vht,
+         month %in% c(5, 6, 7, 8, 9)) %>%
+  arrange(link_lagosid, date) %>%
+  select(link_lagosid, date, month, VHT, year) %>%
+  View()
+
+MN_VHT_calculator %>%
+  filter(link_lagosid %in% increasing_vht,
+         month %in% c(5, 6, 7, 8, 9)) %>%
+  mutate(season = case_when(
+    month %in% c(5, 6) ~ "Preseason",
+    month %in% c(7, 8, 9) ~ "Concurrent"
+  )) %>%
+  ggplot(aes(x = date, y = VHT, color = season)) +
+  geom_point(size = 2, alpha = 0.7) +
+  geom_line(alpha = 0.3) +
+  scale_color_manual(values = c("Preseason" = "lightblue", "Concurrent" = "darkblue")) +
+  facet_wrap(~link_lagosid, scales = "free") +
+  labs(title = "VHT Over Time for 'Increasing' Lakes",
+       x = "Date", y = "VHT (m)", color = "Season") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+MN_VHT_calculator %>%
+  filter(link_lagosid %in% increasing_vht,
+         month %in% c(5, 6, 7, 8, 9)) %>%
+  mutate(season = case_when(
+    month %in% c(5, 6) ~ "Preseason",
+    month %in% c(7, 8, 9) ~ "Concurrent"
+  )) %>%
+  group_by(link_lagosid, season) %>%
+  summarise(
+    n_measurements = n(),
+    min_VHT = min(VHT),
+    median_VHT = median(VHT),
+    mean_VHT = mean(VHT),
+    max_VHT = max(VHT),
+    years_sampled = paste(unique(year), collapse = ", "),
+    .groups = "drop"
+  ) %>%
+  arrange(link_lagosid, season) %>%
+  View()
+
+data_balance <- seasonal_summary %>%
+  filter(!is.na(season)) %>%
+  select(link_lagosid, season, n_profiles)
+
+balance_comparison <- seasonal_summary %>%
+  filter(!is.na(season)) %>%
+  select(link_lagosid, season, n_profiles) %>%
+  pivot_wider(names_from = season, values_from = n_profiles, values_fill = 0)
+
+ggplot(balance_comparison, aes(x = Preseason, y = Concurrent)) +
+  geom_point(alpha = 0.5, size = 2) +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +  # 1:1 line
+  labs(title = "Sampling Balance: Preseason vs Concurrent Profiles",
+       subtitle = "Points on red line = equal sampling",
+       x = "Number of Preseason Profiles",
+       y = "Number of Concurrent Profiles") +
+  theme_minimal() +
+  theme(plot.title = element_text(face = "bold", size = 14))
+
+balance_comparison <- balance_comparison %>%
+  mutate(ratio = pmax(Preseason, Concurrent) / pmin(Preseason, Concurrent))
+
+ggplot(balance_comparison, aes(x = ratio)) +
+  geom_histogram(bins = 30, fill = "steelblue", color = "black", alpha = 0.7) +
+  geom_vline(xintercept = 2, color = "red", linetype = "dashed", linewidth = 1) +
+  labs(title = "Sampling Balance Ratio Distribution",
+       subtitle = "Red line at 2:1 ratio threshold",
+       x = "Ratio (Max profiles / Min profiles)",
+       y = "Number of Lakes") +
+  theme_minimal() +
+  theme(plot.title = element_text(face = "bold", size = 14))
+
+# Check the increasing lakes specifically
+increasing_lake_ids <- increasing_lakes$link_lagosid
+
+seasonal_summary %>%
+  filter(link_lagosid %in% increasing_lake_ids) %>%
+  select(link_lagosid, season, n_profiles, avg_VHT) %>%
+  arrange(link_lagosid, season)
 
 
-# proceed -----------------
+balance_comparison <- balance_comparison %>%
+  mutate(increasing = link_lagosid %in% increasing_lakes$link_lagosid)
+
+ggplot(balance_comparison, aes(x = Preseason, y = Concurrent)) +
+  geom_abline(slope = 1, intercept = 0, color = "gray50", linetype = "dashed") +
+  geom_point(data = balance_comparison %>% filter(!increasing), 
+             aes(color = increasing), alpha = 0.6, size = 3) +
+  geom_point(data = balance_comparison %>% filter(increasing), 
+             aes(color = increasing), alpha = 0.6, size = 3) +
+  scale_color_manual(values = c("TRUE" = "red", "FALSE" = "steelblue"),
+                     labels = c("Decreasing/Stable", "Increasing")) +
+  labs(title = "Are Increasing Lakes Due to Unbalanced Sampling?",
+       x = "Number of Preseason Profiles",
+       y = "Number of Concurrent Profiles",
+       color = "VHT Trend") +
+  theme_minimal() +
+  theme(plot.title = element_text(face = "bold", size = 12))
+
+##as a result of this, i am going back up in code to only use lakes in plotting that have at least 4 samples from each season
+
+
+# simplify VHT and prepare for model --------------------------------------------------------------
 
 #simplify
 MN_VHT_summary <- MN_VHT_calculator %>%
@@ -664,4 +936,34 @@ lake_VHT <- VHT_JAS %>%
     year = year
   )
 
-write.csv(lake_VHT, file = "~/Desktop/lake_VHT.csv", row.names = FALSE)
+#write.csv(lake_VHT, file = "~/Desktop/lake_VHT.csv", row.names = FALSE)
+
+#dataset of merged VHT and pre-season predictors
+
+# Make sure join keys have the same type
+lake_VHT <- lake_VHT %>%
+  mutate(
+    lagoslakeid = as.character(lagoslakeid),
+    year        = as.integer(year)
+  )
+
+preseason_predictors <- preseason_predictors %>%
+  mutate(
+    lagoslakeid = as.character(lagoslakeid),
+    year        = as.integer(year)
+  )
+
+Model_insert <- inner_join(
+  lake_VHT,
+  preseason_predictors,
+  by = c("lagoslakeid", "year")
+)
+
+#checks
+setdiff(unique_lakeIDs$lagoslakeid, Model_insert$lagoslakeid)
+
+length(unique(Model_insert$lagoslakeid))
+
+#save
+#write.csv(Model_insert, file = "~/Desktop/Model_insert.csv", row.names = FALSE)
+

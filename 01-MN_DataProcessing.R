@@ -375,111 +375,48 @@ ggplot(data = MN_profiles_final, aes(x = year)) +
   geom_histogram(binwidth = 1, fill = "blue", color = "black", alpha = 0.7) +
   theme_minimal()
 
-# #find lakes where ALL profiles have >50% relative difference from max depth
-# #BUT keep lakes that have profiles >= 10m (even if they have >50% relative difference)
-# problem_lakes <- MN_profiles_10yrs %>%
-#   mutate(
-#     relative_diff = abs(n_dep_inprofile - lake_maxdepth_m) / lake_maxdepth_m,
-#     depth_mismatch = relative_diff > 0.5,
-#     deep_profile = n_dep_inprofile >= 10  # Flag profiles that are 10m or deeper
-#   ) %>%
-#   group_by(link_lagosid) %>%
-#   summarise(
-#     all_profiles_flagged = all(depth_mismatch),
-#     has_deep_profiles = any(deep_profile),  # Check if lake has any profiles >= 10m
-#     .groups = "drop"
-#   ) %>%
-#   filter(all_profiles_flagged & !has_deep_profiles) %>%  # Only flag lakes without deep profiles
-#   pull(link_lagosid)
-# 
-# #check if these are really deep lakes? a couple are, but most arent
-# #adjusted code above to keep lakes that have profiles >10m, because that will likely get us to below strat
-# MN_profiles_10yrs %>%
-#   filter(link_lagosid %in% problem_lakes) %>%
-#   select(link_lagosid, n_dep_inprofile, lake_maxdepth_m) %>%
-#   pivot_longer(cols = c(n_dep_inprofile, lake_maxdepth_m), 
-#                names_to = "depth_type", 
-#                values_to = "depth") %>%
-#   ggplot(aes(x = depth, fill = depth_type)) +
-#   geom_histogram(bins = 20, alpha = 0.7, position = "identity") +
-#   labs(title = "Depth Distributions for Problem Lakes",
-#        x = "Depth (m)",
-#        y = "Count") +
-#   theme_minimal() +
-#   scale_fill_manual(values = c("steelblue", "coral"),
-#                     labels = c("Max Lake Depth", "Profile Depth"))
-# 
-# 
-# # Remove the 65 problem lakes entirely
-# MN_profiles_final <- MN_profiles_10yrs %>%
-#   filter(!link_lagosid %in% problem_lakes) %>%
-#   #remove any remaining profiles that dont reach at least 50% of max depth
-#   mutate(
-#     relative_diff = abs(n_dep_inprofile - lake_maxdepth_m) / lake_maxdepth_m,
-#     depth_mismatch = relative_diff > 0.5
-#   ) %>%
-#   filter(!depth_mismatch) %>%
-#   select(-relative_diff, -depth_mismatch)
-# 
-# # Summary of final dataset
-# final_summary <- tibble(
-#   approach = c("Original", paste0("Final (removed ", length(problem_lakes), " lakes + 50% filter)")),
-#   lakes = c(
-#     n_distinct(MN_profiles_10yrs$link_lagosid),
-#     n_distinct(MN_profiles_final$link_lagosid)
-#   ),
-#   profiles = c(
-#     nrow(MN_profiles_10yrs),
-#     nrow(MN_profiles_final)
-#   )
-# ) %>%
-#   mutate(
-#     lakes_removed = c(0, lakes[1] - lakes[2]),
-#     profiles_removed = c(0, profiles[1] - profiles[2]),
-#     percent_lakes_kept = round(lakes / lakes[1] * 100, 1),
-#     percent_profiles_kept = round(profiles / profiles[1] * 100, 1)
-#   )
-# 
-# print("\nFinal dataset summary:")
-# print(final_summary)
-# 
-# ##if i used 70% instead, it would take lake count down to 390, and profiles to 317,418
-# 
-# ##if i used 80%, it would take lake count down to 260, and profiles to 262,513
+---------------------------------------------------------------------
 
+  #FIGURING OUT THIS SECTION, DO NOT MOVE FORWARD UNTIL DECIDING WHAT LENGTH YEARS TO USE
 
 # Filter for any specific months? Mar-Oct, 371412 obs left
-
 MN_profiles_final <- MN_profiles_final %>%
   filter(month >= 3 & month <= 10)
 
-# Identify lakes with at least one sample during July–September (DOY 182–273)
-#8 lakes dont fit this requirement.. only 379 lakes
-lakes_with_summer_sample <- MN_profiles_final %>%
-  filter(doy >= 182 & doy <= 273) %>%
-  distinct(link_lagosid)
+# Windows by month
+is_summer_month <- function(m) m %in% 7:9   # Jul–Sep
+is_spring_month <- function(m) m %in% 5:6   # May–Jun
 
-#do the same with spring sample April-June (91-181)
-#only 372 lakes..
-lakes_with_spring_sample <- MN_profiles_final %>%
-  filter(doy >= 91 & doy <= 181) %>%
-  distinct(link_lagosid)
+# All (lake, year) combos observed (baseline to test "every year" against)
+years_by_lake <- MN_profiles_final %>%
+  distinct(link_lagosid, year)
 
-#find which lakes have at least one spring and one summer sample
-lakes_with_both <- intersect(
-  lakes_with_spring_sample$link_lagosid,
-  lakes_with_summer_sample$link_lagosid
-)
+# Count how many distinct years each lake has ≥1 sample in Jul–Sep
+summer_years_per_lake <- MN_profiles_final %>%
+  mutate(month = month(date)) %>%
+  filter(month %in% 7:9) %>%                      # July–September
+  distinct(link_lagosid, year) %>%               # 1 row per lake-year with a summer sample
+  count(link_lagosid, name = "n_summer_years")    # tally years per lake
 
-# Confirm how many lakes remain: 360
-length(lakes_with_both)
+ggplot(data = summer_years_per_lake, aes(x = n_summer_years)) +
+  geom_histogram(binwidth = 1, fill = "blue", color = "black", alpha = 0.7) +
+  theme_minimal()
 
-#view lakes
-excluded_lakes <- setdiff(unique(MN_profiles_final$link_lagosid), lakes_with_both)
+# Keep lakes with at least 10 years of summer samples
+lakes_with_10plus_summer_years <- summer_years_per_lake %>%
+  filter(n_summer_years >= 7) %>%
+  arrange(desc(n_summer_years))
 
-#filter dataset to KEEP only those lakes
+#171 with +10 years, 228 with 7+ years, +259 with 5 years
+
+
+----------------
+
+
+#look at only lake IDs and # of years sampled
 MN_profiles_final <- MN_profiles_final %>%
-  filter(link_lagosid %in% lakes_with_both)
+  group_by(link_lagosid) %>%
+  summarise(years_sampled = n_distinct(year), .groups = "drop")
 
 # Just take most recent surface sample for each lake in new table, to easily match with LAGOS data
 #look at only lake IDs, lat, lon, lake_maxdepth_m, lake_area_m2
@@ -1325,6 +1262,9 @@ preseason_waterq_predictors <- LAGOSwaterquality %>%
     .groups = "drop"
   )
 
+#i think this introduced some lakes that have 0 data for months 5 and 6..
+#possibly lakes: 317   339   781  2362  4042 26374 47359
+
 #there are a lot of NaNs here... 29814
 sum(is.nan(as.matrix(preseason_waterq_predictors)))
 
@@ -1510,7 +1450,7 @@ ggplot(unique_lakeIDs, aes(x = longitude, y = latitude, color = has_ice_data)) +
 
 
 
-# Continue on in R script 1.5-MN_ClimatePredictors, then 02-MN_VHT.R, then 03-MN_RFModels.R
+# Continue on in R script 1.5-MN_ClimatePredictors, then 02-MN_VHT.R, then switch to jupyter hub notebooks
 
 #sessionInfo()
 #R version 4.3.1 (2023-06-16)
