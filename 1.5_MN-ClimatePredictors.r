@@ -251,6 +251,10 @@ concurrent_predictors <- concurrent_predictors %>%
   left_join(concurrent_climate_lakes %>% select(-grid_lat, -grid_lon),
             by = c("lagoslakeid" = "lagoslakeid", "year" = "year"))
 
+#any naans?
+#see which columns they are mostly in: 
+sapply(preseason_predictors, function(x) sum(is.nan(x)))
+
 
 #final datasets at this point:
 

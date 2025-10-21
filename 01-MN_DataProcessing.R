@@ -15,6 +15,7 @@ library(ggplot2)
 library(ggmap)
 library(gridExtra)
 library(mgcv)
+library(data.table)
 
 #----------------------------------------------------------------------------------------------------------
 
@@ -64,6 +65,8 @@ MN_profiles <- FULL_MN_profiles %>% #takes data down to 714,410 and 19 variables
                 flag_do, flag_temp, flag_dep_diff) %>%
   filter(lake_geomratio <= "4") 
 
+uniqueN(FULL_MN_profiles$link_lagosid) #3397 lakes
+
 #rename just so i can run the borrowed code from Mike below
 MN_profiles <- MN_profiles %>%
   rename(MonitoringLocationIdentifier = monitoringlocationidentifier)
@@ -95,15 +98,19 @@ MN_profiles = MN_profiles %>%
 MN_profiles <- MN_profiles %>%
     rename(monitoringlocationidentifier = MonitoringLocationIdentifier)
 
-#filter for min depth: code from Mike, based on Jane et al 2021
-valid_profiles <- MN_profiles %>% #Profiles must have a minimum depth less than 3 meters; 
-  group_by(profile_ident) %>% #otherwise the profiles shallowest read could be in 
-  summarise(min.depth = min(depth_m, na.rm = TRUE)) %>% #the metalimnion and capture none of the epilimnion
-  filter(min.depth < 3) %>% #Jane et al 2021
-  pull(profile_ident)
+#expirimenting with removing the below block...
 
-MN_profiles <- MN_profiles %>%
-  filter(profile_ident %in% valid_profiles)
+# #filter for min depth: code from Mike, based on Jane et al 2021
+# valid_profiles <- MN_profiles %>% #Profiles must have a minimum depth less than 3 meters; 
+#   group_by(profile_ident) %>% #otherwise the profiles shallowest read could be in 
+#   summarise(min.depth = min(depth_m, na.rm = TRUE)) %>% #the metalimnion and capture none of the epilimnion
+#   filter(min.depth < 3) %>% #Jane et al 2021
+#   pull(profile_ident)
+
+# MN_profiles <- MN_profiles %>%
+#   filter(profile_ident %in% valid_profiles)
+
+uniqueN(MN_profiles$link_lagosid) #1805 lakes
 
 #replace incorrect max depths (identified in code lines ~700 and moved up in code order)
 
@@ -126,15 +133,16 @@ ggplot(data = lake_years_sampled, aes(x = years_sampled)) +
   geom_histogram(binwidth = 1, fill = "blue", color = "black", alpha = 0.7) +
   theme_minimal()
 
-# Filter for lakes with >10 years of data (should be ~500)
+# Filter for lakes with >10 years of data 
 ten_yrlakes <- lake_years_sampled %>%
   filter(years_sampled >= 10) 
+
+#502 lakes
 
 #look at histogram again
 ggplot(data = ten_yrlakes, aes(x = years_sampled)) +
   geom_histogram(binwidth = 1, fill = "blue", color = "black", alpha = 0.7) +
   theme_minimal()
-
 
 #filter MN_profiles dataset for only lakes with >10 yrs of sampling data
 
@@ -203,6 +211,8 @@ MN_profiles_10yrs %>%
   count(link_lagosid, monitoringlocationidentifier) %>%
   arrange(desc(n)) %>%
   head(10)
+
+uniqueN(MN_profiles_10yrs$link_lagosid)
 
 # Look at the distribution of depth mismatches between # of depths in profile and lake max depth
 depth_distribution <- MN_profiles_10yrs %>%
@@ -377,7 +387,8 @@ ggplot(data = MN_profiles_final, aes(x = year)) +
 
 ---------------------------------------------------------------------
 
-  #FIGURING OUT THIS SECTION, DO NOT MOVE FORWARD UNTIL DECIDING WHAT LENGTH YEARS TO USE
+#FIGURING OUT THIS SECTION, DO NOT MOVE FORWARD UNTIL DECIDING WHAT LENGTH YEARS TO USE
+  #testing 10+ year then looking at spread, can go down to 7+ years if need to
 
 # Filter for any specific months? Mar-Oct, 371412 obs left
 MN_profiles_final <- MN_profiles_final %>%
@@ -404,14 +415,19 @@ ggplot(data = summer_years_per_lake, aes(x = n_summer_years)) +
 
 # Keep lakes with at least 10 years of summer samples
 lakes_with_10plus_summer_years <- summer_years_per_lake %>%
-  filter(n_summer_years >= 7) %>%
+  filter(n_summer_years >= 10) %>%
   arrange(desc(n_summer_years))
 
 #171 with +10 years, 228 with 7+ years, +259 with 5 years
 
+hist(lakes_with_10plus_summer_years$n_summer_years)
+
+#filter profiles dataset with only those 171 lakes
+
+MN_profiles_final <- MN_profiles_final %>%
+  filter(link_lagosid %in% lakes_with_10plus_summer_years$link_lagosid)
 
 ----------------
-
 
 #look at only lake IDs and # of years sampled
 MN_profiles_final <- MN_profiles_final %>%
@@ -508,7 +524,7 @@ EndofYear = MN_profiles_final %>%
 MN_selected_profiles <- MN_profiles_final %>%
   filter(link_lagosid %in% unique_lakeIDs$link_lagosid)
 
-#check that this worked; it did! 360 lakes included
+#check that this worked; it did! 
 n_distinct(MN_selected_profiles$link_lagosid)
 
 
@@ -719,16 +735,80 @@ chemistry_limno <- chemistry_limno %>%
 #first used LAGOS-NE data for this but it only went to 2012, went back and switched out for LAGOS-US data
 #LAGOS-US most recent dates range generally from 2015-2020
 
+#try using chlorophyll-a first
+
+# recent_chla <- chemistry_limno %>%
+#   filter(parameter_name == "chla_ugl", !is.na(sample_date)) %>%
+#   # Extract month and year from sample_date
+#   mutate(
+#     month = month(sample_date),
+#     year = year(sample_date)
+#   ) %>%
+#   # Filter for summer months (7-9)
+#   filter(month >= 7 & month <= 9) %>%
+#   group_by(lagoslakeid) %>%
+#   # Get the three most recent years for each lake
+#   filter(year %in% tail(sort(unique(year)), 3)) %>%
+#   # Calculate average chla across those years
+#   summarise(
+#     chla = mean(parameter_value, na.rm = TRUE),
+#     n_observations = n(),
+#     years_used = paste(sort(unique(year)), collapse = ", "),
+#     .groups = "drop"
+#   )
+# 
+# hist(recent_chla$chla)
+# 
+# #rename link_lagosid to lagoslakeid so i can merge with LAGOS datasets
+# unique_lakeIDs <- unique_lakeIDs %>%
+#   rename(lagoslakeid = link_lagosid)
+# 
+# #now merge in 
+# unique_lakeIDs <- unique_lakeIDs %>%
+#   left_join(recent_chla %>% select(lagoslakeid, chla), by = "lagoslakeid")
+# 
+# unique_lakeIDs <- unique_lakeIDs %>%
+#   mutate(tsi_chla = 9.81 * log(chla) + 30.6)
+# 
+# # Look at histogram of TSI to see spread
+# ggplot(unique_lakeIDs, aes(x = tsi_chla)) +
+#   geom_histogram(binwidth = 2, color = "black", fill = "skyblue")+
+#   theme_minimal()
+
+
+#now try using secchi
+#follow rules for using average 3 most recent years of measurements from between 7-9
+
 recent_secchi <- chemistry_limno %>%
   filter(parameter_name == "secchi_m", !is.na(sample_date)) %>%
-  # Extract month from sample_date and filter for summer months (6-9)
-  mutate(month = month(sample_date)) %>%
-  filter(month >= 6 & month <= 9) %>%
+  # Extract month and year from sample_date
+  mutate(
+    month = month(sample_date),
+    year = year(sample_date)
+  ) %>%
+  # Filter for summer months (7-9)
+  filter(month >= 7 & month <= 9) %>%
   group_by(lagoslakeid) %>%
-  slice_max(order_by = sample_date, n = 1, with_ties = FALSE) %>%
-  ungroup() %>%
-  select(lagoslakeid, sample_date, parameter_name, parameter_value) %>%
-  rename(secchi = parameter_value)
+  # Get the three most recent years for each lake
+  filter(year %in% tail(sort(unique(year)), 3)) %>%
+  # Calculate average chla across those years
+  summarise(
+    secchi = mean(parameter_value, na.rm = TRUE),
+    n_observations = n(),
+    years_used = paste(sort(unique(year)), collapse = ", "),
+    .groups = "drop"
+  )
+
+# recent_secchi <- chemistry_limno %>%
+#   filter(parameter_name == "secchi_m", !is.na(sample_date)) %>%
+#   # Extract month from sample_date and filter for summer months (6-9)
+#   mutate(month = month(sample_date)) %>%
+#   filter(month >= 7 & month <= 9) %>%
+#   group_by(lagoslakeid) %>%
+#   slice_max(order_by = sample_date, n = 1, with_ties = FALSE) %>%
+#   ungroup() %>%
+#   select(lagoslakeid, sample_date, parameter_name, parameter_value) %>%
+#   rename(secchi = parameter_value)
 
 #rename link_lagosid to lagoslakeid so i can merge with LAGOS datasets
 unique_lakeIDs <- unique_lakeIDs %>%
@@ -737,6 +817,8 @@ unique_lakeIDs <- unique_lakeIDs %>%
 #now merge in secchi depth using lagoslakeid
 unique_lakeIDs <- unique_lakeIDs %>%
   left_join(recent_secchi %>% select(lagoslakeid, secchi), by = "lagoslakeid")
+
+# ----
 
 
 # From secchi depth, calculate TSI for each lake: 60 - (14.41 * ln(secci #)) and put in new column
@@ -753,7 +835,12 @@ ggplot(unique_lakeIDs, aes(x = TSI)) +
   geom_histogram(binwidth = 2, color = "black", fill = "skyblue")+
   theme_minimal()
 
-# Then assign oligotrophic as <40, and eutrophic as >50 if this makes sense; based on carlson TSI classification
+# Look at histogram of secchi depth to see spread
+ggplot(unique_lakeIDs, aes(x = secchi)) +
+  geom_histogram(binwidth = 2, color = "black", fill = "skyblue")+
+  theme_minimal()
+
+# Then assign oligotrophic as <40, and eutrophic as >50; based on carlson TSI classification
 
 unique_lakeIDs <- unique_lakeIDs %>%
   mutate(trophic_state = case_when(
@@ -766,7 +853,7 @@ unique_lakeIDs <- unique_lakeIDs %>%
 table(unique_lakeIDs$trophic_state)
 
 #Eutrophic  Mesotrophic Oligotrophic 
-#180          123          57
+#79          64         28
 
 
 #color histogram by trophic state
@@ -828,9 +915,6 @@ profiles_to_investigate <- MN_profiles[
     (MN_profiles$link_lagosid == 381 & MN_profiles$date == "2006-07-24") |
     (MN_profiles$link_lagosid == 1171 & MN_profiles$date == "2013-07-16"), ]
 
-# View the results
-View(profiles_to_investigate)
-
 #In 381 2006-07-24, error is in depth_m, recorded as 4.5 but lets change it to 4.27
 #in 1171 i think they recorded measurements in feet and not in meters
 
@@ -856,7 +940,7 @@ MN_selected_profiles <- MN_selected_profiles[
 #this aligns with <10m or less being shallow for stratifying lakes
 
 mean_depth <- mean(unique_lakeIDs$lake_maxdepth_m, na.rm = TRUE) #12.8
-sd_depth <- sd(unique_lakeIDs$lake_maxdepth_m, na.rm = TRUE) #8.3
+sd_depth <- sd(unique_lakeIDs$lake_maxdepth_m, na.rm = TRUE) #7.2
 
 cutoffs <- quantile(unique_lakeIDs$lake_maxdepth_m, probs = c(0.33, 0.66), na.rm = TRUE)
 
@@ -885,18 +969,20 @@ ggplot(unique_lakeIDs, aes(x = lake_maxdepth_m)) +
 table(unique_lakeIDs$depth_category)
 
 #Deep  Medium Shallow 
-#123     118     119
+#58     56     57
 
 #count categories; there is some crossover, but not entirely 
 unique_lakeIDs %>%
   count(trophic_state, depth_category)
 
-#Eutrophic     Deep              31
-#Eutrophic     Medium            60
-#Eutrophic     Shallow           89
-
-#Oligotrophic  Deep              37
-#Oligotrophic  Medium            17
+#Eutrophic     Deep              23
+#Eutrophic     Medium            23
+#Eutrophic     Shallow           33
+#Mesotrophic   Deep              20
+#Mesotrophic   Medium            23
+#Mesotrophic   Shallow           21
+#Oligotrophic  Deep              15
+#Oligotrophic  Medium            10
 #Oligotrophic  Shallow            3
 
 
@@ -913,7 +999,7 @@ lake_characteristics <- lake_characteristics %>%
 table(lake_characteristics$lake_connectivity_permanent)
 
 #Drainage DrainageLk  Headwater   Isolated   Terminal TerminalLk 
-#48        141         50          104        13          4
+#26        70          20           45        9          1
 
 
 #I AM DECIDING TO ONLY USE PERMANENT FLOW.... NOT CONSIDERING BOTH PERMAMENT AND INTERMITTENT-EPHERMERAL FLOW -------
@@ -922,13 +1008,13 @@ table(lake_characteristics$lake_connectivity_permanent)
 table(lake_characteristics$lake_connectivity_fluctuates)
 
 #N   Y 
-#303  57
+#150. 21
 
 #see how many is in each hydro column
 table(lake_characteristics$lake_connectivity_class)
 
-#Drainage DrainageLk  Headwater   Isolated   Terminal TerminalLk 
-#59        167         38         85          8          3
+#Drainage DrainageLk  Headwater   Isolated   Terminal 
+#27         80         19         39          6 
 
 
 #code definitions --
@@ -961,7 +1047,7 @@ unique_lakeIDs <- unique_lakeIDs %>%
 table(unique_lakeIDs$hydro_category)
 
 #Drainage  Seepage 
-#256        104
+#126        45
 
 ggplot(unique_lakeIDs, aes(x = hydro_category)) +
   geom_histogram(binwidth = 2, color = "black", fill = "skyblue", stat = "count") +
@@ -989,8 +1075,8 @@ unique_lakeIDs <- unique_lakeIDs %>%
 unique_lakeIDs %>%
   filter (lagoslakeid == 79457)
 
-#now assign north and south to all lakes based on "K-means Clustering of Mesonet Stations" figure
-#also following ecoregion boundaries-- other Minnesota lit uses a squiggly line, not a line at 46 lat
+#now assign north and south to all lakes, following advice from Gretchen
+#follows ecoregion boundaries-- other Minnesota lit uses a squiggly line, not a line at 46 lat
 
 #define points along drawn boundary
 boundary_data <- data.frame(
@@ -1012,7 +1098,7 @@ unique_lakeIDs <- unique_lakeIDs %>%
 table(unique_lakeIDs$geo_position)
 
 #North South 
-#82   278
+#37    134
 
 
 ##make a figure for prelim proposal --------------------------------------------------
@@ -1265,14 +1351,14 @@ preseason_waterq_predictors <- LAGOSwaterquality %>%
 #i think this introduced some lakes that have 0 data for months 5 and 6..
 #possibly lakes: 317   339   781  2362  4042 26374 47359
 
-#there are a lot of NaNs here... 29814
+#there are a lot of NaNs here... 12311
 sum(is.nan(as.matrix(preseason_waterq_predictors)))
 
 #see which columns they are mostly in: 
 sapply(preseason_waterq_predictors, function(x) sum(is.nan(x)))
 
-#chla_mayjune  chla_june     tp_mayjune   tp_june  secchi_mayjune    secchi_june   wtemp_mayjune     wtemp_june 
-#     3820       4136           6928        7159            129            388           6904           7086
+#chla_mayjune      chla_june     tp_mayjune        tp_june    secchi_mayjune    secchi_june   wtemp_mayjune  wtemp_june
+#1377                1506           2854           2958             57            174           1639            1746
 
 
 ## TRIM down to only years for each lake that have profiles in MN_selected_profiles
@@ -1302,14 +1388,14 @@ concurrent_waterq_predictors <- LAGOSwaterquality %>%
     .groups = "drop"
   )
 
-#counts NaNs.. 31017
+#counts NaNs.. 12929
 sum(is.nan(as.matrix(concurrent_waterq_predictors))) 
 
 #see which columns they are mostly in: 
 sapply(concurrent_waterq_predictors, function(x) sum(is.nan(x)))
 
-#chla_JAS    chla_aug      tp_JAS      tp_aug  secchi_JAS   secchi_aug   wtemp_JAS   wtemp_aug 
-#3835           4372        7086        7434         118         579        7059        7347
+#chla_JAS    chla_aug      tp_JAS      tp_aug   secchi_JAS   secchi_aug   wtemp_JAS   wtemp_aug 
+#1389          1608        2924        3090          52         282         1697         1887
 
 ## TRIM down to only year for each lake that have profiles in MN_selectedprofiles
 concurrent_waterq_predictors <- concurrent_waterq_predictors %>%
@@ -1318,7 +1404,6 @@ concurrent_waterq_predictors <- concurrent_waterq_predictors %>%
     by = c("lagoslakeid", "year")
   )
 
-#should i try to fill the NaNs? 
 
 #ice data ----------------------------------------------------------------------------------------
 
