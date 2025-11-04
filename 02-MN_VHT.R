@@ -164,7 +164,7 @@ missing_data_summary <- MN_selected_profiles %>%
 table(missing_data_summary$missing_category)
 
 #Has both    Missing O2 only     Missing temp only 
-#21906              4111               763 
+#19646            3996             682 
 
 
 #Switching here to using MN_VHT_calculator going forward
@@ -188,15 +188,13 @@ MN_VHT_calculator <- MN_VHT_calculator %>%
       if (all(is.na(temp_c))) {
         NA_real_
       } else {
-      valid_indices <- which(temp_c <= 22 & depth_m >= 0 & !is.na(temp_c))
-      if (length(valid_indices) == 0) {
-        # If temp never reaches 22°C, use the maximum depth (no suitable cool water)
-        ifelse(!is.na(first(lake_maxdepth_m)), 
-               first(lake_maxdepth_m), 
-               max(depth_m[depth_m >= 0], na.rm = TRUE))
-      } else {
-        pmax(0, depth_m[valid_indices[1]])
-      }
+        valid_indices <- which(temp_c <= 22 & depth_m >= 0 & !is.na(temp_c))
+        if (length(valid_indices) == 0) {
+          # If temp never reaches 22°C, all water is suitable (use 0)
+          0
+        } else {
+          pmax(0, depth_m[valid_indices[1]])
+        }
       }
     }
   ) %>%
@@ -234,13 +232,13 @@ MN_VHT_calculator <- MN_VHT_calculator %>%
 #check summary of results
 summary(MN_VHT_calculator[c("temp_depth", "o2_depth", "VHT")])
 
-# temp_depth        o2_depth           VHT       
-# Min.   : 0.000   Min.   : 0.000   Min.   : 0.00  
-# 1st Qu.: 0.000   1st Qu.: 5.000   1st Qu.: 0.00  
-# Median : 0.364   Median : 7.000   Median : 5.00  
-# Mean   : 2.158   Mean   : 8.691   Mean   : 6.72  
-# 3rd Qu.: 4.022   3rd Qu.:10.000   3rd Qu.: 9.00  
-# Max.   :22.229   Max.   :56.038   Max.   :56.04 
+# temp_depth        o2_depth           VHT        
+# Min.   : 0.000   Min.   : 0.000   Min.   : 0.000  
+# 1st Qu.: 0.000   1st Qu.: 5.000   1st Qu.: 0.114  
+# Median : 0.300   Median : 7.000   Median : 5.000  
+# Mean   : 2.048   Mean   : 8.691   Mean   : 6.807  
+# 3rd Qu.: 4.000   3rd Qu.:10.000   3rd Qu.: 9.000  
+# Max.   :18.000   Max.   :56.038   Max.   :56.038
 
 #plot
 MN_VHT_calculator %>%
@@ -303,8 +301,8 @@ case_summary <- MN_VHT_calculator %>%
 cat("Distribution of cases:\n")
 print(case_summary)
 
-#No suitable habitat (VHT = 0)      6604
-#Suitable habitat exists (VHT > 0) 15302
+#No suitable habitat (VHT = 0)      5162
+#Suitable habitat exists (VHT > 0) 14484
 
 # Check that VHT = o2_depth - temp_depth (should be TRUE for all rows)
 VHT_check <- MN_VHT_calculator %>%
@@ -373,6 +371,8 @@ weird_o2 <- MN_VHT_calculator %>%
   select(link_lagosid, date, o2_depth, lake_maxdepth_m) %>%
   distinct()
 print(head(weird_o2))
+
+###look into lake 924...
 
 # Check for extreme VHT values
 cat("Profiles with VHT > 65m (potential outliers):\n")
@@ -954,12 +954,13 @@ lake_VHT <- VHT_JAS %>%
   select(
     lagoslakeid = link_lagosid,
     VHT = JAS_VHT,
+    Norm_VHT = normalized_JAS_VHT,
     latitude = latitude,
     longitude = longitude,
     year = year
   )
 
-#write.csv(lake_VHT, file = "~/Desktop/lake_VHT.csv", row.names = FALSE)
+write.csv(lake_VHT, file = "~/Desktop/lake_VHT.csv", row.names = FALSE)
 
 #dataset of merged VHT and pre-season predictors
 
@@ -985,8 +986,10 @@ Model_insert <- inner_join(
 #checks
 setdiff(unique_lakeIDs$lagoslakeid, Model_insert$lagoslakeid)
 
-length(unique(Model_insert$lagoslakeid))
+uniqueN(Model_insert$lagoslakeid) #155
+
+uniqueN(unique_lakeIDs$lagoslakeid) #156
 
 #save
-#write.csv(Model_insert, file = "~/Desktop/Model_insert.csv", row.names = FALSE)
+write.csv(Model_insert, file = "~/Desktop/Model_insert.csv", row.names = FALSE)
 

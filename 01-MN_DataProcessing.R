@@ -110,15 +110,19 @@ MN_profiles <- MN_profiles %>%
 # MN_profiles <- MN_profiles %>%
 #   filter(profile_ident %in% valid_profiles)
 
-uniqueN(MN_profiles$link_lagosid) #1805 lakes
+uniqueN(MN_profiles$link_lagosid) #1815 lakes
 
-#replace incorrect max depths (identified in code lines ~700 and moved up in code order)
+#replace incorrect max depths (identified in code lines ~700 and MN_VHT script and moved up in code order)
 
 #East Moore Lake in Minneapolis, MN; DNR lists max depth as 6.7m, ID = 197
 MN_profiles$lake_max_depth_m[MN_profiles$link_lagosid == 197] <- 6.7
 
 #MN DNR says 8.5 m max depth for ID = 734
 MN_profiles$lake_max_depth_m[MN_profiles$link_lagosid == 734] <- 8.5
+
+#NEW ISSUE: remove lakes that have a max depth of 3m or less
+MN_profiles <- MN_profiles %>% 
+  filter(lake_maxdepth_m > 3)
 
 #look at data
 glimpse(MN_profiles)
@@ -137,7 +141,6 @@ ggplot(data = lake_years_sampled, aes(x = years_sampled)) +
 ten_yrlakes <- lake_years_sampled %>%
   filter(years_sampled >= 10) 
 
-#502 lakes
 
 #look at histogram again
 ggplot(data = ten_yrlakes, aes(x = years_sampled)) +
@@ -357,11 +360,11 @@ MN_profiles_final <- MN_profiles_filtered %>%
   )
 
 print("Filtering Summary:")
-print(paste("Total lakes after initial filtering:", length(unique(MN_profiles_filtered$link_lagosid)))) #436
-print(paste("Lakes classified as stable below 10m:", length(stable_lakes))) #145
-print(paste("Lakes in final dataset:", length(unique(MN_profiles_final$link_lagosid)))) #391
-print(paste("Total profiles after initial filtering:", nrow(MN_profiles_filtered))) #408770
-print(paste("Total profiles in final dataset:", nrow(MN_profiles_final))) #335111
+print(paste("Total lakes after initial filtering:", length(unique(MN_profiles_filtered$link_lagosid)))) #392
+print(paste("Lakes classified as stable below 10m:", length(stable_lakes))) #146
+print(paste("Lakes in final dataset:", length(unique(MN_profiles_final$link_lagosid)))) #349
+print(paste("Total profiles after initial filtering:", nrow(MN_profiles_filtered))) #399394
+print(paste("Total profiles in final dataset:", nrow(MN_profiles_final))) #327732
 
 
 # Check what depth coverage we're getting in non-stable lakes
@@ -374,18 +377,18 @@ if(length(non_stable_coverage) > 0) {
   print(paste("\nDepth coverage in non-stable lakes (kept profiles):"))
   print(paste("Mean coverage:", round(mean(non_stable_coverage, na.rm = TRUE), 3))) #1.116
   print(paste("Min coverage:", round(min(non_stable_coverage, na.rm = TRUE), 3))) #0.8
-  print(paste("Profiles with >90% coverage:", sum(non_stable_coverage > 0.9, na.rm = TRUE))) #104080
+  print(paste("Profiles with >90% coverage:", sum(non_stable_coverage > 0.9, na.rm = TRUE))) #96546
 }
 
 print(paste("Lakes in final dataset:", length(unique(MN_profiles_final$link_lagosid))))
-#391
+#349
 
 #check what years are included here
 ggplot(data = MN_profiles_final, aes(x = year)) +
   geom_histogram(binwidth = 1, fill = "blue", color = "black", alpha = 0.7) +
   theme_minimal()
 
----------------------------------------------------------------------
+#---------------------------------------------------------------------
 
 #FIGURING OUT THIS SECTION, DO NOT MOVE FORWARD UNTIL DECIDING WHAT LENGTH YEARS TO USE
   #testing 10+ year then looking at spread, can go down to 7+ years if need to
@@ -418,21 +421,17 @@ lakes_with_10plus_summer_years <- summer_years_per_lake %>%
   filter(n_summer_years >= 10) %>%
   arrange(desc(n_summer_years))
 
-#171 with +10 years, 228 with 7+ years, +259 with 5 years
+#156 with +10 years, 228 with 7+ years, +259 with 5 years
 
 hist(lakes_with_10plus_summer_years$n_summer_years)
 
-#filter profiles dataset with only those 171 lakes
+#filter profiles dataset with only those 156 lakes
 
 MN_profiles_final <- MN_profiles_final %>%
   filter(link_lagosid %in% lakes_with_10plus_summer_years$link_lagosid)
 
-----------------
+#----------------
 
-#look at only lake IDs and # of years sampled
-MN_profiles_final <- MN_profiles_final %>%
-  group_by(link_lagosid) %>%
-  summarise(years_sampled = n_distinct(year), .groups = "drop")
 
 # Just take most recent surface sample for each lake in new table, to easily match with LAGOS data
 #look at only lake IDs, lat, lon, lake_maxdepth_m, lake_area_m2
@@ -853,7 +852,7 @@ unique_lakeIDs <- unique_lakeIDs %>%
 table(unique_lakeIDs$trophic_state)
 
 #Eutrophic  Mesotrophic Oligotrophic 
-#79          64         28
+#67          61         28
 
 
 #color histogram by trophic state
@@ -901,7 +900,7 @@ ggplot(unique_lakeIDs, aes(x = longitude, y = latitude, color = trophic_state)) 
 
 #this depth data is the same as in LAGOS; find lakes on internet by their coordinates and name
 
-#fix these DEPTHS earlier up: lakes 197, 734
+#fix these DEPTHS earlier up: lakes 197, 734, 375
 
 #investigate profiles
 
@@ -939,8 +938,8 @@ MN_selected_profiles <- MN_selected_profiles[
 #use 33% quantiles as shallow and deep cutoffs
 #this aligns with <10m or less being shallow for stratifying lakes
 
-mean_depth <- mean(unique_lakeIDs$lake_maxdepth_m, na.rm = TRUE) #12.8
-sd_depth <- sd(unique_lakeIDs$lake_maxdepth_m, na.rm = TRUE) #7.2
+mean_depth <- mean(unique_lakeIDs$lake_maxdepth_m, na.rm = TRUE) #14.1
+sd_depth <- sd(unique_lakeIDs$lake_maxdepth_m, na.rm = TRUE) #6.68
 
 cutoffs <- quantile(unique_lakeIDs$lake_maxdepth_m, probs = c(0.33, 0.66), na.rm = TRUE)
 
@@ -969,18 +968,18 @@ ggplot(unique_lakeIDs, aes(x = lake_maxdepth_m)) +
 table(unique_lakeIDs$depth_category)
 
 #Deep  Medium Shallow 
-#58     56     57
+#53     51     52
 
 #count categories; there is some crossover, but not entirely 
 unique_lakeIDs %>%
   count(trophic_state, depth_category)
 
-#Eutrophic     Deep              23
-#Eutrophic     Medium            23
-#Eutrophic     Shallow           33
-#Mesotrophic   Deep              20
-#Mesotrophic   Medium            23
-#Mesotrophic   Shallow           21
+#Eutrophic     Deep              20
+#Eutrophic     Medium            21
+#Eutrophic     Shallow           26
+#Mesotrophic   Deep              18
+#Mesotrophic   Medium            20
+#Mesotrophic   Shallow           23
 #Oligotrophic  Deep              15
 #Oligotrophic  Medium            10
 #Oligotrophic  Shallow            3
@@ -999,7 +998,7 @@ lake_characteristics <- lake_characteristics %>%
 table(lake_characteristics$lake_connectivity_permanent)
 
 #Drainage DrainageLk  Headwater   Isolated   Terminal TerminalLk 
-#26        70          20           45        9          1
+#22        67          17           41        8          1
 
 
 #I AM DECIDING TO ONLY USE PERMANENT FLOW.... NOT CONSIDERING BOTH PERMAMENT AND INTERMITTENT-EPHERMERAL FLOW -------
@@ -1008,13 +1007,13 @@ table(lake_characteristics$lake_connectivity_permanent)
 table(lake_characteristics$lake_connectivity_fluctuates)
 
 #N   Y 
-#150. 21
+#138 18
 
 #see how many is in each hydro column
 table(lake_characteristics$lake_connectivity_class)
 
 #Drainage DrainageLk  Headwater   Isolated   Terminal 
-#27         80         19         39          6 
+#21         77        16.          36         6 
 
 
 #code definitions --
@@ -1047,7 +1046,7 @@ unique_lakeIDs <- unique_lakeIDs %>%
 table(unique_lakeIDs$hydro_category)
 
 #Drainage  Seepage 
-#126        45
+#115        41
 
 ggplot(unique_lakeIDs, aes(x = hydro_category)) +
   geom_histogram(binwidth = 2, color = "black", fill = "skyblue", stat = "count") +
@@ -1098,7 +1097,7 @@ unique_lakeIDs <- unique_lakeIDs %>%
 table(unique_lakeIDs$geo_position)
 
 #North South 
-#37    134
+#36    120
 
 
 ##make a figure for prelim proposal --------------------------------------------------
@@ -1348,8 +1347,6 @@ preseason_waterq_predictors <- LAGOSwaterquality %>%
     .groups = "drop"
   )
 
-#i think this introduced some lakes that have 0 data for months 5 and 6..
-#possibly lakes: 317   339   781  2362  4042 26374 47359
 
 #there are a lot of NaNs here... 12311
 sum(is.nan(as.matrix(preseason_waterq_predictors)))
@@ -1442,8 +1439,8 @@ ice_data %>%
 
 
 #how many lakes match?
-#there are 157 lakes in unique_lakeIDs that are missing from ice_data
-missing_lakes <- setdiff(unique_lakeIDs$link_lagosid, ice_data$lagoslakeid)
+#there are 69 lakes in unique_lakeIDs that are missing from ice_data
+missing_lakes <- setdiff(unique_lakeIDs$lagoslakeid, ice_data$lagoslakeid)
 cat("Number of lakes missing from ice_data:", length(missing_lakes), "\n")
 
 missing_lakes <- data.frame(
@@ -1451,7 +1448,7 @@ missing_lakes <- data.frame(
 )
 
 #plot to see on graph
-unique_lakeIDs$has_ice_data <- unique_lakeIDs$link_lagosid %in% ice_data$lagoslakeid
+unique_lakeIDs$has_ice_data <- unique_lakeIDs$lagoslakeid %in% ice_data$lagoslakeid
 
 ggplot(unique_lakeIDs, aes(x = longitude, y = latitude, color = has_ice_data)) +
   borders("state", regions = "minnesota", fill = "gray95", colour = "gray70") +
