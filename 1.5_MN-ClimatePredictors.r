@@ -265,13 +265,7 @@ sapply(preseason_predictors, function(x) sum(is.nan(x)))
 
 
 
-#precipitation and temperature from MDNR according to watershed unit ------------------------------
-
-
-
-
-
-
+write.csv(unique_lakeIDs, file = "~/Desktop/unique_lakeIDs.csv", row.names = FALSE)
 
 # Continue on in R script 02-MN_VHT.R then switch to jupyter hub notebooks
 #sessionInfo()

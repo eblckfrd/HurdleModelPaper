@@ -120,10 +120,6 @@ MN_profiles$lake_max_depth_m[MN_profiles$link_lagosid == 197] <- 6.7
 #MN DNR says 8.5 m max depth for ID = 734
 MN_profiles$lake_max_depth_m[MN_profiles$link_lagosid == 734] <- 8.5
 
-#NEW ISSUE: remove lakes that have a max depth of 3m or less
-MN_profiles <- MN_profiles %>% 
-  filter(lake_maxdepth_m > 3)
-
 #look at data
 glimpse(MN_profiles)
 
@@ -151,10 +147,6 @@ ggplot(data = ten_yrlakes, aes(x = years_sampled)) +
 
 MN_profiles_10yrs <- MN_profiles %>%
   filter(link_lagosid %in% ten_yrlakes$link_lagosid)
-
-#removing Mille Lacs Lake and Rainy Lake for being excessive size outliers (see commented out code later below for reasoning)
-MN_profiles_10yrs <- MN_profiles_10yrs %>%
-  filter(!link_lagosid %in% c(2498, 73))
 
 #add new month column
 MN_profiles_10yrs <- MN_profiles_10yrs %>%
@@ -360,11 +352,11 @@ MN_profiles_final <- MN_profiles_filtered %>%
   )
 
 print("Filtering Summary:")
-print(paste("Total lakes after initial filtering:", length(unique(MN_profiles_filtered$link_lagosid)))) #392
+print(paste("Total lakes after initial filtering:", length(unique(MN_profiles_filtered$link_lagosid)))) #443
 print(paste("Lakes classified as stable below 10m:", length(stable_lakes))) #146
-print(paste("Lakes in final dataset:", length(unique(MN_profiles_final$link_lagosid)))) #349
-print(paste("Total profiles after initial filtering:", nrow(MN_profiles_filtered))) #399394
-print(paste("Total profiles in final dataset:", nrow(MN_profiles_final))) #327732
+print(paste("Lakes in final dataset:", length(unique(MN_profiles_final$link_lagosid)))) #393
+print(paste("Total profiles after initial filtering:", nrow(MN_profiles_filtered))) #409495
+print(paste("Total profiles in final dataset:", nrow(MN_profiles_final))) #335386
 
 
 # Check what depth coverage we're getting in non-stable lakes
@@ -381,7 +373,7 @@ if(length(non_stable_coverage) > 0) {
 }
 
 print(paste("Lakes in final dataset:", length(unique(MN_profiles_final$link_lagosid))))
-#349
+#393
 
 #check what years are included here
 ggplot(data = MN_profiles_final, aes(x = year)) +
@@ -457,22 +449,6 @@ unique_lakeIDs$lake_area_ha <- unique_lakeIDs$lake_area_m2 / 10000
 ggplot(data = unique_lakeIDs, aes(x = lake_area_ha)) +
   geom_histogram(binwidth = 100, fill = "blue", color = "black", alpha = 0.7) +
   theme_minimal()
-
-# unique_lakeIDs %>%
-#   filter(lake_area_ha > 50000) #ID: 2498
-# 
-# unique_lakeIDs %>%
-#   filter(lake_area_ha >= 15000 & lake_area_ha <= 20000) #ID: 73
-# 
-# MN_profiles %>%
-#   filter (link_lagosid == 2498) #MILLE LACS LAKE, MN
-# 
-# MN_profiles %>%
-#   filter (link_lagosid == 73) #RAINY LK, MN
-
-#these two lakes are just sooooo huge compared to the other ones, so im removing them as outliers up at 'MN_profiles_10yrs'
-#and commenting out this section
-
 
 # Plot lake lat/lon onto map to see north/south spread
 
@@ -852,7 +828,7 @@ unique_lakeIDs <- unique_lakeIDs %>%
 table(unique_lakeIDs$trophic_state)
 
 #Eutrophic  Mesotrophic Oligotrophic 
-#67          61         28
+#79          64         28
 
 
 #color histogram by trophic state
@@ -938,8 +914,8 @@ MN_selected_profiles <- MN_selected_profiles[
 #use 33% quantiles as shallow and deep cutoffs
 #this aligns with <10m or less being shallow for stratifying lakes
 
-mean_depth <- mean(unique_lakeIDs$lake_maxdepth_m, na.rm = TRUE) #14.1
-sd_depth <- sd(unique_lakeIDs$lake_maxdepth_m, na.rm = TRUE) #6.68
+mean_depth <- mean(unique_lakeIDs$lake_maxdepth_m, na.rm = TRUE) #12.9
+sd_depth <- sd(unique_lakeIDs$lake_maxdepth_m, na.rm = TRUE) #7.25
 
 cutoffs <- quantile(unique_lakeIDs$lake_maxdepth_m, probs = c(0.33, 0.66), na.rm = TRUE)
 
@@ -968,21 +944,21 @@ ggplot(unique_lakeIDs, aes(x = lake_maxdepth_m)) +
 table(unique_lakeIDs$depth_category)
 
 #Deep  Medium Shallow 
-#53     51     52
+#58     56     57
 
 #count categories; there is some crossover, but not entirely 
 unique_lakeIDs %>%
   count(trophic_state, depth_category)
 
-#Eutrophic     Deep              20
-#Eutrophic     Medium            21
-#Eutrophic     Shallow           26
-#Mesotrophic   Deep              18
-#Mesotrophic   Medium            20
-#Mesotrophic   Shallow           23
-#Oligotrophic  Deep              15
-#Oligotrophic  Medium            10
-#Oligotrophic  Shallow            3
+# 1 Eutrophic     Deep              23
+# 2 Eutrophic     Medium            23
+# 3 Eutrophic     Shallow           33
+# 4 Mesotrophic   Deep              20
+# 5 Mesotrophic   Medium            23
+# 6 Mesotrophic   Shallow           21
+# 7 Oligotrophic  Deep              15
+# 8 Oligotrophic  Medium            10
+# 9 Oligotrophic  Shallow            3
 
 
 #now for hydrology category, seepage (or "isolated" vs. drainage)
@@ -1007,13 +983,13 @@ table(lake_characteristics$lake_connectivity_permanent)
 table(lake_characteristics$lake_connectivity_fluctuates)
 
 #N   Y 
-#138 18
+#150 21
 
 #see how many is in each hydro column
 table(lake_characteristics$lake_connectivity_class)
 
 #Drainage DrainageLk  Headwater   Isolated   Terminal 
-#21         77        16.          36         6 
+#21         80        19          39         6 
 
 
 #code definitions --
@@ -1046,7 +1022,7 @@ unique_lakeIDs <- unique_lakeIDs %>%
 table(unique_lakeIDs$hydro_category)
 
 #Drainage  Seepage 
-#115        41
+#126        45
 
 ggplot(unique_lakeIDs, aes(x = hydro_category)) +
   geom_histogram(binwidth = 2, color = "black", fill = "skyblue", stat = "count") +
@@ -1097,7 +1073,7 @@ unique_lakeIDs <- unique_lakeIDs %>%
 table(unique_lakeIDs$geo_position)
 
 #North South 
-#36    120
+#37.    134
 
 
 ##make a figure for prelim proposal --------------------------------------------------

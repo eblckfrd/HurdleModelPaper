@@ -13,11 +13,13 @@ library(ggplot2)
 library(ggmap)
 library(hexbin)
 library(gridExtra)
+library(data.table)
 
 
 # Calculate VHT for 5 randomly selected lake profiles ----------------------------------------------------------------------------------------
 
 #calculate VHT function 
+
 
 #Minnesota: based on TDO3… so 3mg/L and 21.5 C
 #from MDNR water quality standard guide
@@ -164,7 +166,7 @@ missing_data_summary <- MN_selected_profiles %>%
 table(missing_data_summary$missing_category)
 
 #Has both    Missing O2 only     Missing temp only 
-#19646            3996             682 
+#21172.         4106.              756
 
 
 #Switching here to using MN_VHT_calculator going forward
@@ -301,8 +303,8 @@ case_summary <- MN_VHT_calculator %>%
 cat("Distribution of cases:\n")
 print(case_summary)
 
-#No suitable habitat (VHT = 0)      5162
-#Suitable habitat exists (VHT > 0) 14484
+#No suitable habitat (VHT = 0)      5321
+#Suitable habitat exists (VHT > 0) 15851
 
 # Check that VHT = o2_depth - temp_depth (should be TRUE for all rows)
 VHT_check <- MN_VHT_calculator %>%
@@ -841,7 +843,8 @@ MN_VHT_calculator %>%
   select(link_lagosid, date, month, VHT, year) %>%
   View()
 
-
+MN_VHT_calculator <- MN_VHT_calculator |>
+  dplyr::filter(!(link_lagosid == 2968 & date == as.Date("1981-08-11")))
 
 
 # simplify VHT and prepare for model --------------------------------------------------------------
@@ -909,11 +912,11 @@ ggplot() +
   geom_point(data = lake_VHT_map, 
              aes(x = longitude, y = latitude, color = mean_normalized_JAS_VHT),
              size = 2, alpha = 0.7) +
-  scale_color_viridis_c(name = "JAS VHT (m)", option = "plasma") +
+  scale_color_viridis_c(name = "JAS Normalized VHT", option = "plasma") +
   theme_minimal() +
   coord_fixed(1.3) +
   labs(
-    title = "July-August-September VHT across Minnesota Lakes",
+    title = "July-August-September Normalized VHT across Minnesota Lakes",
     x = "Longitude",
     y = "Latitude"
   )
@@ -983,13 +986,29 @@ Model_insert <- inner_join(
   by = c("lagoslakeid", "year")
 )
 
+#now for concurrent AND preseason
+
+concurrent_predictors <- concurrent_predictors %>%
+  mutate(
+    lagoslakeid = as.character(lagoslakeid),
+    year        = as.integer(year)
+  )
+
+ConcurrentPreseason_Model_insert <- inner_join(
+  Model_insert,
+  concurrent_predictors,
+  by = c("lagoslakeid", "year")
+)
+
 #checks
 setdiff(unique_lakeIDs$lagoslakeid, Model_insert$lagoslakeid)
 
-uniqueN(Model_insert$lagoslakeid) #155
+uniqueN(Model_insert$lagoslakeid) #170
 
-uniqueN(unique_lakeIDs$lagoslakeid) #156
+uniqueN(unique_lakeIDs$lagoslakeid) #171
 
 #save
 write.csv(Model_insert, file = "~/Desktop/Model_insert.csv", row.names = FALSE)
+
+write.csv(ConcurrentPreseason_Model_insert, file = "~/Desktop/ConcurrentPreseason_Model_insert.csv", row.names = FALSE)
 
