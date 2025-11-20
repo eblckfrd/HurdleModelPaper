@@ -40,17 +40,6 @@ epi_waterquality10873 <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/e
 chemistry_limno <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/chemistry_limno.csv")
       #this is from LAGOS-US, all water quality parameters
 
-#-----------------------
-
-#ice duration from Minnesota Lake Ice Phenology dataset: https://conservancy.umn.edu/items/940c6197-486b-437c-96ca-cca9b4534dfa
-
-ice_data <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/ice_duration.csv")
-
-#DOW : Department of Waterbody Lake ID
-#winter.year : If the ice came on in fall of 2000 and melted in spring of 2001 the winter.year variable would be 2001
-    #using this one
-#fall.year : The fall year of the observation. If the ice came on in fall of 2000 and melted in the spring of 2001 the fall.year variable would be 2000
-
 
 ##Profile data processing ------------------------------------------------------------------------------------
 
@@ -390,7 +379,7 @@ MN_profiles_final <- MN_profiles_final %>%
   filter(month >= 3 & month <= 10)
 
 # Windows by month
-is_summer_month <- function(m) m %in% 7:9   # Jul–Sep
+is_summer_month <- function(m) m %in% 7:8   # Jul–Sep
 is_spring_month <- function(m) m %in% 5:6   # May–Jun
 
 # All (lake, year) combos observed (baseline to test "every year" against)
@@ -410,7 +399,7 @@ ggplot(data = summer_years_per_lake, aes(x = n_summer_years)) +
 
 # Keep lakes with at least 10 years of summer samples
 lakes_with_10plus_summer_years <- summer_years_per_lake %>%
-  filter(n_summer_years >= 10) %>%
+  filter(n_summer_years >= 7) %>%
   arrange(desc(n_summer_years))
 
 #156 with +10 years, 228 with 7+ years, +259 with 5 years
@@ -468,7 +457,7 @@ ggplot(unique_lakeIDs, aes(x = longitude, y = latitude)) +
 
 #now colored in by depth
 ggplot(unique_lakeIDs, aes(x = longitude, y = latitude, color = lake_maxdepth_m)) +
-  borders("state", regions = "minnesota", fill = "gray95", colour = "gray70") +
+  borders("state", regions = "minnesota", fill = "lightgray", colour = "gray70") +
   geom_point(size = 2, alpha = 0.8) +
   coord_quickmap(
     xlim = c(-97.5, -89),
@@ -476,7 +465,7 @@ ggplot(unique_lakeIDs, aes(x = longitude, y = latitude, color = lake_maxdepth_m)
   ) +
   scale_color_gradient(
     name = "Max Depth (m)",
-    low = "skyblue2",
+    low = "dodgerblue1",
     high = "darkblue"
   ) +
   theme_minimal() +
@@ -761,8 +750,8 @@ recent_secchi <- chemistry_limno %>%
     month = month(sample_date),
     year = year(sample_date)
   ) %>%
-  # Filter for summer months (7-9)
-  filter(month >= 7 & month <= 9) %>%
+  # Filter for summer months (7-8)
+  filter(month >= 7 & month <= 8) %>%
   group_by(lagoslakeid) %>%
   # Get the three most recent years for each lake
   filter(year %in% tail(sort(unique(year)), 3)) %>%
@@ -1341,22 +1330,15 @@ preseason_waterq_predictors <- preseason_waterq_predictors %>%
     by = c("lagoslakeid", "year")
   )
 
-#try july-aug-sep, and just aug
+#july-aug
 concurrent_waterq_predictors <- LAGOSwaterquality %>%
-  filter(month %in% c(7, 8, 9)) %>%  # only keep May and June
+  filter(month %in% c(7, 8)) %>%  # only keep May and June
   group_by(lagoslakeid, year) %>%
   summarise(
-    chla_JAS = mean(chla_ugl, na.rm = TRUE),
-    chla_aug    = mean(chla_ugl[month == 8], na.rm = TRUE),
-    
-    tp_JAS   = mean(tp_ugl, na.rm = TRUE),
-    tp_aug      = mean(tp_ugl[month == 8], na.rm = TRUE),
-    
-    secchi_JAS = mean(secchi_m, na.rm = TRUE),
-    secchi_aug    = mean(secchi_m[month == 8], na.rm = TRUE),
-    
-    wtemp_JAS   = mean(surface_temp_c, na.rm = TRUE),
-    wtemp_aug      = mean(surface_temp_c[month == 8], na.rm = TRUE),
+    chla_JA = mean(chla_ugl, na.rm = TRUE),
+    tp_JA   = mean(tp_ugl, na.rm = TRUE),
+    secchi_JA = mean(secchi_m, na.rm = TRUE),
+    wtemp_JA   = mean(surface_temp_c, na.rm = TRUE),
     
     .groups = "drop"
   )
@@ -1367,8 +1349,8 @@ sum(is.nan(as.matrix(concurrent_waterq_predictors)))
 #see which columns they are mostly in: 
 sapply(concurrent_waterq_predictors, function(x) sum(is.nan(x)))
 
-#chla_JAS    chla_aug      tp_JAS      tp_aug   secchi_JAS   secchi_aug   wtemp_JAS   wtemp_aug 
-#1389          1608        2924        3090          52         282         1697         1887
+#chla_JA       tp_JA   secchi_JA    wtemp_JA 
+#1913        3847          66        2637
 
 ## TRIM down to only year for each lake that have profiles in MN_selectedprofiles
 concurrent_waterq_predictors <- concurrent_waterq_predictors %>%
@@ -1377,8 +1359,17 @@ concurrent_waterq_predictors <- concurrent_waterq_predictors %>%
     by = c("lagoslakeid", "year")
   )
 
+# Continue on in R script 1.5-MN_ClimatePredictors, then 02-MN_VHT.R, then switch to jupyter hub notebooks
 
-#ice data ----------------------------------------------------------------------------------------
+write.csv(unique_lakeIDs, file = "~/Desktop/unique_lakeIDs.csv", row.names = FALSE)
+
+#sessionInfo()
+#R version 4.3.1 (2023-06-16)
+#Platform: x86_64-apple-darwin20 (64-bit)
+#Running under: macOS 15.4.1
+
+
+#confusing ice data ----------------------------------------------------------------------------------------
 
 #predictors needed for all years: ice-on time, water level
 #use winter.year to filter years
@@ -1393,124 +1384,267 @@ print(paste("Unique lake IDs:", length(unique(ice_data$DOW))))
 ice_data <- ice_data %>%
   select(DOW, winter.year, min_duration)
 
-#pull data from full_MN_profiles and lagosne to try to find lagosid's for all DOW ice lakes
-testing_bridge <- LAGOSNE_lakeslocus101 %>%
-  inner_join(
-    FULL_MN_profiles %>% distinct(nhdid = link_nhd_id, lagoslakeid = link_lagosid, state_ident, latitude, longitude),
-    by = c("nhdid", "lagoslakeid")
-  ) %>%
-  select(lagoslakeid, nhdid, state_ident, latitude, longitude)
 
-#now join using bridge
-ice_data <- ice_data %>%
+
+# First, get ONE lat/lon for each state_ident from full_MN_profiles
+mn_coords <- FULL_MN_profiles %>%
+  select(state_ident, latitude, longitude) %>%
+  distinct(state_ident, .keep_all = TRUE)  # Get one row per state_ident
+
+# Get unique DOW values and join with coordinates
+ice_locations_all <- ice_data %>%
+  distinct(DOW) %>%  # Get unique DOW values
+  mutate(DOW = as.character(DOW)) %>%  # Convert to character
   left_join(
-    testing_bridge %>% select(state_ident, lagoslakeid),
+    mn_coords %>% mutate(state_ident = as.character(state_ident)),
     by = c("DOW" = "state_ident")
   )
 
-#how many DOWs are missing a lagos_id? #222
-ice_data %>%
-  filter(is.na(lagoslakeid)) %>%
-  summarise(unique_DOWs_without_lagoslakeid = n_distinct(DOW))
+# Check for missing coordinates
+print(paste("Ice data lakes missing coordinates:", 
+            sum(is.na(ice_locations_all$latitude) | is.na(ice_locations_all$longitude))))
 
 
-#how many lakes match?
-#there are 69 lakes in unique_lakeIDs that are missing from ice_data
-missing_lakes <- setdiff(unique_lakeIDs$lagoslakeid, ice_data$lagoslakeid)
-cat("Number of lakes missing from ice_data:", length(missing_lakes), "\n")
+# Create sf object only from lakes WITH coordinates for matching
+ice_locations_sf <- ice_locations_all %>%
+  filter(!is.na(latitude) & !is.na(longitude)) %>%
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
 
-missing_lakes <- data.frame(
-  lagos_lakeid = missing_lakes
+# Check unique_lakeIDs for missing coordinates
+print(paste("unique_lakeIDs missing coordinates:", 
+            sum(is.na(unique_lakeIDs$latitude) | is.na(unique_lakeIDs$longitude))))
+
+# Convert unique_lakeIDs to sf object (only those with coordinates)
+unique_lakes_with_coords <- unique_lakeIDs %>%
+  filter(!is.na(latitude) & !is.na(longitude))
+
+unique_lakes_sf <- unique_lakes_with_coords %>%
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+
+# Find nearest lake in ice_data for each lake in unique_lakeIDs
+nearest_matches <- st_nearest_feature(unique_lakes_sf, ice_locations_sf)
+
+# Create a crosswalk table linking lagoslakeid to DOW
+lake_crosswalk <- data.frame(
+  lagoslakeid = unique_lakes_with_coords$lagoslakeid,
+  DOW = ice_locations_sf$DOW[nearest_matches],
+  distance_m = st_distance(unique_lakes_sf, ice_locations_sf[nearest_matches, ], by_element = TRUE)
 )
 
-#plot to see on graph
-unique_lakeIDs$has_ice_data <- unique_lakeIDs$lagoslakeid %in% ice_data$lagoslakeid
+# Check the distances to ensure good matches
+summary(as.numeric(lake_crosswalk$distance_m))
 
-ggplot(unique_lakeIDs, aes(x = longitude, y = latitude, color = has_ice_data)) +
-  borders("state", regions = "minnesota", fill = "gray95", colour = "gray70") +
-  geom_point(size = 2, alpha = 0.7) +
-  scale_color_manual(values = c("TRUE" = "blue", "FALSE" = "red"),
-                     labels = c("TRUE" = "Has ice data", "FALSE" = "Missing ice data")) +
-  coord_quickmap(
-    xlim = c(-97.5, -89),   # Longitude range for Minnesota
-    ylim = c(43.5, 49.5)    # Latitude range for Minnesota
-  ) +
-  theme_minimal() +
-  labs(
-    title = "Minnesota Lakes: Ice Data Coverage",
-    x = "Longitude",
-    y = "Latitude",
-    color = "Status"
+
+# Check the coordinate ranges for both datasets
+print("Ice locations coordinates:")
+summary(ice_locations_all %>% filter(!is.na(latitude), !is.na(longitude)))
+
+print("Unique lakes coordinates:")
+summary(unique_lakeIDs %>% filter(!is.na(latitude), !is.na(longitude)))
+
+# Look at a few examples from each
+print("Sample ice locations:")
+head(ice_locations_all %>% filter(!is.na(latitude), !is.na(longitude)))
+
+print("Sample unique lakes:")
+head(unique_lakeIDs %>% filter(!is.na(latitude), !is.na(longitude)))
+
+
+# Check if state_ident values in full_MN_profiles match DOW values in ice_data
+mn_state_idents <- FULL_MN_profiles %>%
+  distinct(state_ident) %>%
+  pull(state_ident)
+
+ice_DOWs <- ice_data %>%
+  distinct(DOW) %>%
+  pull(DOW)
+
+print(paste("Unique state_idents in full_MN_profiles:", length(mn_state_idents)))
+print(paste("Unique DOWs in ice_data:", length(ice_DOWs)))
+print(paste("DOWs that match state_idents:", sum(as.character(ice_DOWs) %in% as.character(mn_state_idents))))
+
+# Check if unique_lakeIDs has a DOW or state_ident column
+print("Columns in unique_lakeIDs:")
+print(colnames(unique_lakeIDs))
+
+
+
+# Get the linking table: DOW -> link_lagosid from FULL_MN_profiles
+# Remove NAs and get one row per state_ident with its link_lagosid
+link_table <- FULL_MN_profiles %>%
+  select(state_ident, link_lagosid) %>%
+  filter(!is.na(link_lagosid)) %>%  # Remove rows with NA link_lagosid
+  distinct(state_ident, link_lagosid)
+
+# Check for duplicates again (one state_ident matching multiple link_lagosids)
+duplicates <- link_table %>%
+  group_by(state_ident) %>%
+  filter(n() > 1) %>%
+  arrange(state_ident)
+
+print(paste("State_idents with multiple link_lagosids:", n_distinct(duplicates$state_ident)))
+
+if(nrow(duplicates) > 0) {
+  print("Warning: Some state_idents still have multiple link_lagosids after removing NAs")
+  print(head(duplicates, 20))
+  # Keep first occurrence for now
+  link_table <- link_table %>%
+    distinct(state_ident, .keep_all = TRUE)
+}
+
+# Join ice_data to the link table to get link_lagosid
+ice_data_with_lagos <- ice_data %>%
+  left_join(
+    link_table,
+    by = c("DOW" = "state_ident")
   )
 
+# Check matching success
+print(paste("Total ice data rows:", nrow(ice_data_with_lagos)))
+print(paste("Ice data rows with link_lagosid:", sum(!is.na(ice_data_with_lagos$link_lagosid))))
+print(paste("Unique DOWs in ice data:", n_distinct(ice_data$DOW)))
+print(paste("Unique DOWs matched to link_lagosid:", n_distinct(ice_data_with_lagos$link_lagosid[!is.na(ice_data_with_lagos$link_lagosid)])))
 
-# #try to match ids through lat and lon..
-#this didnt work well
+# Now join to unique_lakeIDs (matching link_lagosid to lagoslakeid)
+unique_lakeIDs_with_ice <- unique_lakeIDs %>%
+  left_join(
+    ice_data_with_lagos %>% select(link_lagosid, DOW, winter.year, min_duration),
+    by = c("lagoslakeid" = "link_lagosid")
+  )
 
-# missing_dow_coords <- FULL_MN_profiles %>%
-#   filter(state_ident %in% missing_lagos_DOWs$DOW) %>%
-#   select(state_ident, latitude, longitude) %>%  # adjust column names if needed
-#   distinct(state_ident, .keep_all = TRUE)
-# 
-# dow_check <- FULL_MN_profiles %>%
-#   filter(state_ident %in% missing_lagos_DOWs$DOW) %>%
-#   distinct(state_ident)
-# 
-# cat("Number of missing DOWs found in FULL_MN_profiles:", nrow(dow_check), "\n")
-# 
-# # Check the coordinates for these DOWs
-# missing_dow_coords <- FULL_MN_profiles %>%
-#   filter(state_ident %in% missing_lagos_DOWs$DOW) %>%
-#   select(state_ident, latitude, longitude) %>%
-#   distinct(state_ident, .keep_all = TRUE)
-# 
-# cat("Number of missing DOWs with coordinates:", nrow(missing_dow_coords), "\n")
-# 
-# cat("\nNA values in FULL_MN_profiles coordinates:", 
-#     sum(is.na(FULL_MN_profiles$latitude)) + sum(is.na(FULL_MN_profiles$longitude)), "\n")
-# 
-# cat("NA values in unique_lakeIDs coordinates:", 
-#     sum(is.na(unique_lakeIDs$latitude)) + sum(is.na(unique_lakeIDs$longitude)), "\n")
-# 
-# missing_dow_coords <- FULL_MN_profiles %>%
-#   filter(state_ident %in% missing_lagos_DOWs$DOW) %>%
-#   filter(!is.na(latitude) & !is.na(longitude)) %>%  # Remove NAs
-#   select(state_ident, latitude, longitude) %>%
-#   distinct(state_ident, .keep_all = TRUE)
-# 
-# missing_dow_coords <- missing_dow_coords %>%
-#   left_join(unique_lakeIDs %>% 
-#               select(latitude, longitude, link_lagosid) %>% 
-#               distinct(link_lagosid, .keep_all = TRUE), 
-#             by = c("latitude" = "latitude", "longitude" = "longitude"))
-# 
-# # Round coordinates to reduce floating-point precision issues
-# missing_dow_coords <- missing_dow_coords %>%
-#   mutate(
-#     lat_rounded = round(latitude, 2),    # 6 decimal places ≈ 0.1 meter precision
-#     lon_rounded = round(longitude, 2)
-#   )
-# 
-# unique_lakeIDs <- unique_lakeIDs %>%
-#   mutate(
-#     lat_rounded = round(latitude, 2),
-#     lon_rounded = round(longitude, 2)
-#   )
-# 
-# # Join on rounded coordinates
-# result <- missing_dow_coords %>%
-#   left_join(
-#     unique_lakeIDs %>% 
-#       select(lat_rounded, lon_rounded, link_lagosid) %>%
-#       distinct(link_lagosid, .keep_all = TRUE),
-#     by = c("lat_rounded" = "lat_rounded", "lon_rounded" = "lon_rounded")
-#   )
+# Final summary
+print(paste("Total lakes in unique_lakeIDs:", n_distinct(unique_lakeIDs$lagoslakeid)))
+print(paste("Lakes in unique_lakeIDs with ice data:", n_distinct(unique_lakeIDs_with_ice$lagoslakeid[!is.na(unique_lakeIDs_with_ice$min_duration)])))
+print(paste("Total rows with ice data (including all years):", sum(!is.na(unique_lakeIDs_with_ice$min_duration))))
+
+# See which lakes are missing ice data
+lakes_without_ice <- unique_lakeIDs %>%
+  anti_join(ice_data_with_lagos, by = c("lagoslakeid" = "link_lagosid")) %>%
+  select(lagoslakeid, latitude, longitude)
+
+print(paste("Lakes WITHOUT ice data:", nrow(lakes_without_ice)))
+
+unique_lakeIDs_with_ice %>%
+  filter(!is.na(min_duration)) %>%
+  select(lagoslakeid, DOW, winter.year, min_duration) %>%
+  head(20)
 
 
 
-# Continue on in R script 1.5-MN_ClimatePredictors, then 02-MN_VHT.R, then switch to jupyter hub notebooks
+#exploring ice data from LIAG
+#NO MATCHES
 
-#sessionInfo()
-#R version 4.3.1 (2023-06-16)
-#Platform: x86_64-apple-darwin20 (64-bit)
-#Running under: macOS 15.4.1
+liag_icedata <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/liag_ice.csv")
+  
+#how many lakes are there with ice data: 68
+print(paste("Unique lake IDs:", length(unique(liag_icedata$lakecode))))
+
+# Get unique lake locations from liag_icedata
+liag_locations <- liag_icedata %>%
+  distinct(lakecode, latitude, longitude) %>%  # adjust column names as needed
+  filter(!is.na(latitude) & !is.na(longitude)) %>%
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+
+print(paste("Unique lakes in liag_icedata with coordinates:", nrow(liag_locations)))
+
+# Convert lakes_without_ice to sf object
+lakes_without_ice_sf <- lakes_without_ice %>%
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+
+# Find nearest lake in liag_icedata for each missing lake
+nearest_liag <- st_nearest_feature(lakes_without_ice_sf, liag_locations)
+
+# Create a matching table
+liag_matches <- data.frame(
+  lagoslakeid = lakes_without_ice$lagoslakeid,
+  lakecode_liag = liag_locations$lakecode[nearest_liag],
+  distance_m = st_distance(lakes_without_ice_sf, liag_locations[nearest_liag, ], by_element = TRUE)
+)
+
+# Check distances
+summary(as.numeric(liag_matches$distance_m))
+
+
+
+# First, get locations from the DOW ice data
+dow_ice_locations <- ice_data_with_lagos %>%
+  filter(!is.na(link_lagosid)) %>%
+  distinct(link_lagosid, DOW) %>%
+  left_join(
+    FULL_MN_profiles %>% 
+      select(state_ident, link_lagosid, latitude, longitude) %>%
+      filter(!is.na(link_lagosid)) %>%
+      distinct(link_lagosid, .keep_all = TRUE),
+    by = "link_lagosid"
+  ) %>%
+  filter(!is.na(latitude) & !is.na(longitude)) %>%
+  mutate(source = "DOW") %>%
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+
+# Get locations from LIAG ice data
+liag_ice_locations <- liag_icedata %>%
+  distinct(lakecode, latitude, longitude) %>%  # adjust column names
+  filter(!is.na(latitude) & !is.na(longitude)) %>%
+  mutate(source = "LIAG") %>%
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+
+# Combine both
+all_ice_locations <- bind_rows(
+  dow_ice_locations %>% select(source, geometry),
+  liag_ice_locations %>% select(source, geometry)
+)
+
+print(paste("Total lakes with ice data:", nrow(all_ice_locations)))
+
+# Convert lakes_without_ice to sf
+lakes_without_ice_sf <- lakes_without_ice %>%
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+
+# Find nearest lake with ice data for each missing lake
+nearest_ice <- st_nearest_feature(lakes_without_ice_sf, all_ice_locations)
+
+# Create matching table with distances
+closest_matches <- data.frame(
+  lagoslakeid = lakes_without_ice$lagoslakeid,
+  nearest_source = all_ice_locations$source[nearest_ice],
+  distance_m = st_distance(lakes_without_ice_sf, all_ice_locations[nearest_ice, ], by_element = TRUE)
+) %>%
+  arrange(distance_m)
+
+# Summary
+summary(as.numeric(closest_matches$distance_m))
+
+library(maps)
+
+# Get Minnesota state boundary
+minnesota <- map_data("state", region = "minnesota")
+
+lake_ice_status <- unique_lakeIDs %>%
+  mutate(
+    has_ice = lagoslakeid %in% unique_lakeIDs_with_ice$lagoslakeid[!is.na(unique_lakeIDs_with_ice$min_duration)]
+  ) %>%
+  mutate(ice_status = ifelse(has_ice, "Has Ice Data (92 lakes)", "No Ice Data (79 lakes)")) %>%
+  select(lagoslakeid, latitude, longitude, has_ice_data, ice_status)
+
+
+# Create the map with Minnesota boundary
+ggplot() +
+  geom_polygon(data = minnesota, 
+               aes(x = long, y = lat, group = group),
+               fill = "gray95", color = "gray50", linewidth = 0.5) +
+  geom_point(data = lake_ice_status, 
+             aes(x = longitude, y = latitude, color = ice_status),
+             size = 3, alpha = 0.8) +
+  scale_color_manual(values = c("Has Ice Data (92 lakes)" = "#2166ac", 
+                                "No Ice Data (79 lakes)" = "#d73027")) +
+  labs(title = "Minnesota Lakes: Ice Data Availability",
+       subtitle = "171 lakes from unique_lakeIDs dataset",
+       x = "Longitude",
+       y = "Latitude",
+       color = "Status") +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        legend.title = element_text(face = "bold")) +
+  coord_map()
+
+

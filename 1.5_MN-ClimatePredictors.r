@@ -29,7 +29,7 @@ PDO_index <- PDO_index %>%
 
 #JAS
 PDO_index <- PDO_index %>%
-  mutate(JAS_Avg = rowMeans(select(., Jul, Aug, Sep), na.rm = TRUE))
+  mutate(JA_Avg = rowMeans(select(., Jul, Aug), na.rm = TRUE))
 
 #add all to full predictor datasets
 preseason_predictors <- preseason_waterq_predictors %>%
@@ -38,9 +38,9 @@ preseason_predictors <- preseason_waterq_predictors %>%
   rename(PDO_June = Jun, PDO_MJ = MJ_Avg)
 
 concurrent_predictors <- concurrent_waterq_predictors %>%
-  left_join(PDO_index %>% select(Year, Jul, JAS_Avg), 
+  left_join(PDO_index %>% select(Year, JA_Avg), 
             by = c("year" = "Year")) %>%
-  rename(PDO_Jul = Jul, PDO_JAS = JAS_Avg)
+  rename(PDO_JA = JA_Avg)
 
 #NAM/AO index -------
 AO_index <- read.table("~/Desktop/Research/Data/Climate Index Data/AO_index.txt", header = TRUE, sep = "", dec = ".")
@@ -51,7 +51,7 @@ AO_index <- AO_index %>%
 
 #JAS
 AO_index <- AO_index %>%
-  mutate(JAS_Avg = rowMeans(select(., Jul, Aug, Sep), na.rm = TRUE))
+  mutate(JA_Avg = rowMeans(select(., Jul, Aug), na.rm = TRUE))
 
 #add all to full predictor datasets
 preseason_predictors <- preseason_predictors %>%
@@ -60,9 +60,9 @@ preseason_predictors <- preseason_predictors %>%
   rename(AO_June = Jun, AO_MJ = MJ_Avg)
 
 concurrent_predictors <- concurrent_predictors %>%
-  left_join(AO_index %>% select(Year, Jul, JAS_Avg), 
+  left_join(AO_index %>% select(Year, JA_Avg), 
             by = c("year" = "Year")) %>%
-  rename(AO_Jul = Jul, AO_JAS = JAS_Avg)
+  rename(AO_JA = JA_Avg)
 
 
 #Nino 3.4 index -----
@@ -75,7 +75,7 @@ Nino34_index <- Nino34_index %>%
 
 #JAS
 Nino34_index <- Nino34_index %>%
-  mutate(JAS_Avg = rowMeans(select(., Jul, Aug, Sep), na.rm = TRUE))
+  mutate(JA_Avg = rowMeans(select(., Jul, Aug), na.rm = TRUE))
 
 #add all to full predictor datasets
 preseason_predictors <- preseason_predictors %>%
@@ -84,9 +84,9 @@ preseason_predictors <- preseason_predictors %>%
   rename(ENSO_June = Jun, ENSO_MJ = MJ_Avg)
 
 concurrent_predictors <- concurrent_predictors %>%
-  left_join(Nino34_index %>% select(Year, Jul, JAS_Avg), 
+  left_join(Nino34_index %>% select(Year, JA_Avg), 
             by = c("year" = "Year")) %>%
-  rename(ENSO_Jul = Jul, ENSO_JAS = JAS_Avg)
+  rename(ENSO_JA = JA_Avg)
 
 #PNA index -------
 
@@ -98,7 +98,7 @@ PNA_index <- PNA_index %>%
 
 #JAS
 PNA_index <- PNA_index %>%
-  mutate(JAS_Avg = rowMeans(select(., Jul, Aug, Sep), na.rm = TRUE))
+  mutate(JA_Avg = rowMeans(select(., Jul, Aug), na.rm = TRUE))
 
 #add all to full predictor datasets
 preseason_predictors <- preseason_predictors %>%
@@ -107,9 +107,9 @@ preseason_predictors <- preseason_predictors %>%
   rename(PNA_June = Jun, PNA_MJ = MJ_Avg)
 
 concurrent_predictors <- concurrent_predictors %>%
-  left_join(PNA_index %>% select(Year, Jul, JAS_Avg), 
+  left_join(PNA_index %>% select(Year, JA_Avg), 
             by = c("year" = "Year")) %>%
-  rename(PNA_Jul = Jul, PNA_JAS = JAS_Avg)
+  rename(PNA_JA = JA_Avg)
 
 #NAM index ----
 
@@ -121,7 +121,7 @@ NAM_index <- NAM_index %>%
 
 #JAS
 NAM_index <- NAM_index %>%
-  mutate(JAS_Avg = rowMeans(select(., Jul, Aug, Sep), na.rm = TRUE))
+  mutate(JA_Avg = rowMeans(select(., Jul, Aug), na.rm = TRUE))
 
 #add all to full predictor datasets
 preseason_predictors <- preseason_predictors %>%
@@ -130,9 +130,9 @@ preseason_predictors <- preseason_predictors %>%
   rename(NAM_June = Jun, NAM_MJ = MJ_Avg)
 
 concurrent_predictors <- concurrent_predictors %>%
-  left_join(NAM_index %>% select(Year, Jul, JAS_Avg), 
+  left_join(NAM_index %>% select(Year, JA_Avg), 
             by = c("year" = "Year")) %>%
-  rename(NAM_Jul = Jul, NAM_JAS = JAS_Avg)
+  rename(NAM_JA = JA_Avg)
 
 
 # Calculate Seasonal Global Climate Data ----------------------------------

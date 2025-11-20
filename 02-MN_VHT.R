@@ -28,7 +28,7 @@ library(data.table)
 
 first_five_lakes <- MN_selected_profiles %>%
   distinct(link_lagosid) %>%
-  slice(10:15)
+  slice(57:61)
 
 firstfive_lakedata <- MN_selected_profiles %>%
   filter(link_lagosid %in% first_five_lakes$link_lagosid) %>%
@@ -495,6 +495,15 @@ MN_VHT_calculator <- MN_VHT_calculator %>%
             by = c("link_lagosid" = "lagoslakeid"))
 
 
+#find month with the most 0 value VHT
+zero_counts_all <- MN_VHT_calculator %>%
+  group_by(month) %>%
+  summarise(count_zeros = sum(VHT == 0, na.rm = TRUE))
+
+print(zero_counts_all)
+
+
+
 #Now can plot seasonality differences based on categories ------------------------------------------------
 
 #Create loops to make plots for all the categories
@@ -744,7 +753,7 @@ seasonal_summary <- MN_VHT_calculator %>%
   mutate(
     season = case_when(
       month %in% c(5, 6) ~ "Preseason", 
-      month %in% c(7, 8, 9) ~ "Concurrent"
+      month %in% c(7, 8) ~ "Concurrent"
     )
   ) %>%
   group_by(link_lagosid, latitude, longitude, season) %>%
@@ -863,29 +872,29 @@ MN_VHT_summary <- MN_VHT_calculator %>%
     .groups = "drop"
   )
 
-#calculate August, and JAS
+#calculate JA
 
-VHT_JAS <- MN_VHT_summary %>%
-  # Filter for July, August, September only
-  filter(month %in% c(7, 8, 9)) %>%
+VHT_JA <- MN_VHT_summary %>%
+  # Filter for July, August
+  filter(month %in% c(7, 8)) %>%
   group_by(link_lagosid, year) %>%
   summarise(
-    # July/August/September average
-    JAS_VHT = mean(VHT, na.rm = TRUE),
+    # July/August average
+    JA_VHT = mean(VHT, na.rm = TRUE),
     lake_maxdepth_m = first(lake_maxdepth),  # Grab the max depth
     .groups = "drop"
   ) %>%
   mutate(
-    normalized_JAS_VHT = JAS_VHT / lake_maxdepth_m  # Calculate normalized value
+    normalized_JA_VHT = JA_VHT / lake_maxdepth_m  # Calculate normalized value
   )
 
 
 #histogram
-ggplot(VHT_JAS, aes(x = JAS_VHT)) +
+ggplot(VHT_JA, aes(x = JA_VHT)) +
   geom_histogram(bins = 20, fill = "steelblue", color = "white") +
   theme_minimal()
 
-ggplot(VHT_JAS, aes(x = normalized_JAS_VHT)) +
+ggplot(VHT_JA, aes(x = normalized_JA_VHT)) +
   geom_histogram(bins = 20, fill = "steelblue", color = "white") +
   theme_minimal()
 
@@ -895,11 +904,11 @@ lake_VHT_map <- MN_VHT_calculator %>%
   select(link_lagosid, latitude, longitude) %>%
   distinct() %>%
   left_join(
-    VHT_JAS %>%
+    VHT_JA %>%
       group_by(link_lagosid) %>%
       summarise(
-        mean_JAS_VHT = mean(JAS_VHT, na.rm = TRUE),
-        mean_normalized_JAS_VHT = mean(normalized_JAS_VHT, na.rm = TRUE),
+        mean_JA_VHT = mean(JA_VHT, na.rm = TRUE),
+        mean_normalized_JA_VHT = mean(normalized_JA_VHT, na.rm = TRUE),
         .groups = "drop"
       ),
     by = "link_lagosid"
@@ -910,26 +919,26 @@ ggplot() +
                fill = "white", color = "black") +
   # Lake points colored by VHT
   geom_point(data = lake_VHT_map, 
-             aes(x = longitude, y = latitude, color = mean_normalized_JAS_VHT),
+             aes(x = longitude, y = latitude, color = mean_normalized_JA_VHT),
              size = 2, alpha = 0.7) +
   scale_color_viridis_c(name = "JAS Normalized VHT", option = "plasma") +
   theme_minimal() +
   coord_fixed(1.3) +
   labs(
-    title = "July-August-September Normalized VHT across Minnesota Lakes",
+    title = "July-August Normalized VHT across Minnesota Lakes",
     x = "Longitude",
     y = "Latitude"
   )
 
-mean_VHT_by_year <- VHT_JAS %>%
+mean_VHT_by_year <- VHT_JA %>%
   group_by(year) %>%
-  summarise(mean_VHT = mean(JAS_VHT, na.rm = TRUE), .groups = "drop")
+  summarise(mean_VHT = mean(JA_VHT, na.rm = TRUE), .groups = "drop")
 
 # Create the plot
 ggplot() +
   # Individual lake lines (thin and transparent)
-  geom_line(data = VHT_JAS, 
-            aes(x = year, y = JAS_VHT, group = link_lagosid),
+  geom_line(data = VHT_JA, 
+            aes(x = year, y = JA_VHT, group = link_lagosid),
             alpha = 0.2, color = "gray50") +
   # Mean line (thick and prominent)
   geom_line(data = mean_VHT_by_year, 
@@ -940,24 +949,24 @@ ggplot() +
              color = "red", size = 3) +
   theme_minimal() +
   labs(
-    title = "July-August-September VHT Over Time",
+    title = "July-August VHT Over Time",
     subtitle = "Gray lines: individual lakes | Red line: mean across all lakes",
     x = "Year",
-    y = "JAS VHT (m)"
+    y = "JA VHT (m)"
   )
 
 #need to get 25 random lakes and put into csv to transfer over to python
 
-#use VHT_JAS
+#use VHT_JA
 
 #new dataset called lake_VHT, with lagoslakeid, VHT, latitude, longitude, and year
 
-lake_VHT <- VHT_JAS %>%
+lake_VHT <- VHT_JA %>%
   left_join(unique_lakeIDs, by = c("link_lagosid" = "lagoslakeid")) %>%
   select(
     lagoslakeid = link_lagosid,
-    VHT = JAS_VHT,
-    Norm_VHT = normalized_JAS_VHT,
+    VHT = JA_VHT,
+    Norm_VHT = normalized_JA_VHT,
     latitude = latitude,
     longitude = longitude,
     year = year
