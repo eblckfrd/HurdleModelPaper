@@ -817,7 +817,7 @@ unique_lakeIDs <- unique_lakeIDs %>%
 table(unique_lakeIDs$trophic_state)
 
 #Eutrophic  Mesotrophic Oligotrophic 
-#79          64         28
+#113       76.       40
 
 
 #color histogram by trophic state
@@ -903,8 +903,8 @@ MN_selected_profiles <- MN_selected_profiles[
 #use 33% quantiles as shallow and deep cutoffs
 #this aligns with <10m or less being shallow for stratifying lakes
 
-mean_depth <- mean(unique_lakeIDs$lake_maxdepth_m, na.rm = TRUE) #12.9
-sd_depth <- sd(unique_lakeIDs$lake_maxdepth_m, na.rm = TRUE) #7.25
+mean_depth <- mean(unique_lakeIDs$lake_maxdepth_m, na.rm = TRUE) #12.7
+sd_depth <- sd(unique_lakeIDs$lake_maxdepth_m, na.rm = TRUE) #7.38
 
 cutoffs <- quantile(unique_lakeIDs$lake_maxdepth_m, probs = c(0.33, 0.66), na.rm = TRUE)
 
@@ -933,21 +933,21 @@ ggplot(unique_lakeIDs, aes(x = lake_maxdepth_m)) +
 table(unique_lakeIDs$depth_category)
 
 #Deep  Medium Shallow 
-#58     56     57
+#78.    75.    76
 
 #count categories; there is some crossover, but not entirely 
 unique_lakeIDs %>%
   count(trophic_state, depth_category)
 
-# 1 Eutrophic     Deep              23
-# 2 Eutrophic     Medium            23
-# 3 Eutrophic     Shallow           33
-# 4 Mesotrophic   Deep              20
-# 5 Mesotrophic   Medium            23
+# 1 Eutrophic     Deep              28
+# 2 Eutrophic     Medium            32
+# 3 Eutrophic     Shallow           53
+# 4 Mesotrophic   Deep              27
+# 5 Mesotrophic   Medium            28
 # 6 Mesotrophic   Shallow           21
-# 7 Oligotrophic  Deep              15
-# 8 Oligotrophic  Medium            10
-# 9 Oligotrophic  Shallow            3
+# 7 Oligotrophic  Deep              23
+# 8 Oligotrophic  Medium            15
+# 9 Oligotrophic  Shallow            2
 
 
 #now for hydrology category, seepage (or "isolated" vs. drainage)
@@ -963,7 +963,7 @@ lake_characteristics <- lake_characteristics %>%
 table(lake_characteristics$lake_connectivity_permanent)
 
 #Drainage DrainageLk  Headwater   Isolated   Terminal TerminalLk 
-#22        67          17           41        8          1
+#36.       83.         27.         71.        11`.        1`
 
 
 #I AM DECIDING TO ONLY USE PERMANENT FLOW.... NOT CONSIDERING BOTH PERMAMENT AND INTERMITTENT-EPHERMERAL FLOW -------
@@ -972,13 +972,13 @@ table(lake_characteristics$lake_connectivity_permanent)
 table(lake_characteristics$lake_connectivity_fluctuates)
 
 #N   Y 
-#150 21
+#196 33
 
 #see how many is in each hydro column
 table(lake_characteristics$lake_connectivity_class)
 
 #Drainage DrainageLk  Headwater   Isolated   Terminal 
-#21         80        19          39         6 
+#40.       97.        25.         60.        7
 
 
 #code definitions --
@@ -1011,7 +1011,7 @@ unique_lakeIDs <- unique_lakeIDs %>%
 table(unique_lakeIDs$hydro_category)
 
 #Drainage  Seepage 
-#126        45
+#158.       71
 
 ggplot(unique_lakeIDs, aes(x = hydro_category)) +
   geom_histogram(binwidth = 2, color = "black", fill = "skyblue", stat = "count") +
@@ -1062,7 +1062,7 @@ unique_lakeIDs <- unique_lakeIDs %>%
 table(unique_lakeIDs$geo_position)
 
 #North South 
-#37.    134
+#58.   178
 
 
 ##make a figure for prelim proposal --------------------------------------------------
@@ -1297,16 +1297,16 @@ preseason_waterq_predictors <- LAGOSwaterquality %>%
   filter(month %in% c(5, 6)) %>%  # only keep May and June
   group_by(lagoslakeid, year) %>%
   summarise(
-    chla_mayjune = mean(chla_ugl, na.rm = TRUE),
+    chla_may    = mean(chla_ugl[month == 5], na.rm = TRUE),
     chla_june    = mean(chla_ugl[month == 6], na.rm = TRUE),
     
-    tp_mayjune   = mean(tp_ugl, na.rm = TRUE),
+    tp_may   = mean(tp_ugl[month == 5], na.rm = TRUE),
     tp_june      = mean(tp_ugl[month == 6], na.rm = TRUE),
     
-    secchi_mayjune = mean(secchi_m, na.rm = TRUE),
+    secchi_may = mean(secchi_m[month == 5], na.rm = TRUE),
     secchi_june    = mean(secchi_m[month == 6], na.rm = TRUE),
     
-    wtemp_mayjune   = mean(surface_temp_c, na.rm = TRUE),
+    wtemp_may   = mean(surface_temp_c[month == 5], na.rm = TRUE),
     wtemp_june      = mean(surface_temp_c[month == 6], na.rm = TRUE),
     
     .groups = "drop"
@@ -1319,8 +1319,8 @@ sum(is.nan(as.matrix(preseason_waterq_predictors)))
 #see which columns they are mostly in: 
 sapply(preseason_waterq_predictors, function(x) sum(is.nan(x)))
 
-#chla_mayjune      chla_june     tp_mayjune        tp_june    secchi_mayjune    secchi_june   wtemp_mayjune  wtemp_june
-#1377                1506           2854           2958             57            174           1639            1746
+#chla_may   chla_june      tp_may     tp_june  secchi_may secchi_june   wtemp_may  wtemp_june
+#2416        2057        4063        3890        1140         227        3072.      2682
 
 
 ## TRIM down to only years for each lake that have profiles in MN_selected_profiles
@@ -1332,7 +1332,7 @@ preseason_waterq_predictors <- preseason_waterq_predictors %>%
 
 #july-aug
 concurrent_waterq_predictors <- LAGOSwaterquality %>%
-  filter(month %in% c(7, 8)) %>%  # only keep May and June
+  filter(month %in% c(7, 8)) %>%  # 
   group_by(lagoslakeid, year) %>%
   summarise(
     chla_JA = mean(chla_ugl, na.rm = TRUE),
@@ -1362,6 +1362,19 @@ concurrent_waterq_predictors <- concurrent_waterq_predictors %>%
 # Continue on in R script 1.5-MN_ClimatePredictors, then 02-MN_VHT.R, then switch to jupyter hub notebooks
 
 write.csv(unique_lakeIDs, file = "~/Desktop/unique_lakeIDs.csv", row.names = FALSE)
+
+lake_categories <- unique_lakeIDs %>%
+  select(
+    lagoslakeid,
+    longitude,
+    latitude,
+    trophic_state,
+    depth_category,
+    hydro_category,
+    geo_position
+  )
+
+write_csv(lake_categories, "lake_categories.csv")
 
 #sessionInfo()
 #R version 4.3.1 (2023-06-16)

@@ -23,19 +23,15 @@ library(sf)
 #PDO index ----
 PDO_index <- read.table("~/Desktop/Research/Data/Climate Index Data/PDO_index.txt", header = TRUE, sep = "", dec = ".")
 
-#may-june average
-PDO_index <- PDO_index %>%
-  mutate(MJ_Avg = rowMeans(select(., May, Jun), na.rm = TRUE))
-
-#JAS
+#JA
 PDO_index <- PDO_index %>%
   mutate(JA_Avg = rowMeans(select(., Jul, Aug), na.rm = TRUE))
 
 #add all to full predictor datasets
 preseason_predictors <- preseason_waterq_predictors %>%
-  left_join(PDO_index %>% select(Year, Jun, MJ_Avg), 
+  left_join(PDO_index %>% select(Year, Jun, May), 
             by = c("year" = "Year")) %>%
-  rename(PDO_June = Jun, PDO_MJ = MJ_Avg)
+  rename(PDO_June = Jun, PDO_May = May)
 
 concurrent_predictors <- concurrent_waterq_predictors %>%
   left_join(PDO_index %>% select(Year, JA_Avg), 
@@ -45,19 +41,16 @@ concurrent_predictors <- concurrent_waterq_predictors %>%
 #NAM/AO index -------
 AO_index <- read.table("~/Desktop/Research/Data/Climate Index Data/AO_index.txt", header = TRUE, sep = "", dec = ".")
 
-#may-june average
-AO_index <- AO_index %>%
-  mutate(MJ_Avg = rowMeans(select(., May, Jun), na.rm = TRUE))
 
-#JAS
+#JA
 AO_index <- AO_index %>%
   mutate(JA_Avg = rowMeans(select(., Jul, Aug), na.rm = TRUE))
 
 #add all to full predictor datasets
 preseason_predictors <- preseason_predictors %>%
-  left_join(AO_index %>% select(Year, Jun, MJ_Avg), 
+  left_join(AO_index %>% select(Year, Jun, May), 
             by = c("year" = "Year")) %>%
-  rename(AO_June = Jun, AO_MJ = MJ_Avg)
+  rename(AO_June = Jun, AO_May = May)
 
 concurrent_predictors <- concurrent_predictors %>%
   left_join(AO_index %>% select(Year, JA_Avg), 
@@ -69,19 +62,15 @@ concurrent_predictors <- concurrent_predictors %>%
 
 Nino34_index <- read.table("~/Documents/R Repositories/Ch2_DataAnalysis/Nino3.4_Index.txt", header = TRUE, sep = "", dec = ".")
 
-#may-june average
-Nino34_index <- Nino34_index %>%
-  mutate(MJ_Avg = rowMeans(select(., May, Jun), na.rm = TRUE))
-
-#JAS
+#JA
 Nino34_index <- Nino34_index %>%
   mutate(JA_Avg = rowMeans(select(., Jul, Aug), na.rm = TRUE))
 
 #add all to full predictor datasets
 preseason_predictors <- preseason_predictors %>%
-  left_join(Nino34_index %>% select(Year, Jun, MJ_Avg), 
+  left_join(Nino34_index %>% select(Year, Jun, May), 
             by = c("year" = "Year")) %>%
-  rename(ENSO_June = Jun, ENSO_MJ = MJ_Avg)
+  rename(ENSO_June = Jun, ENSO_May = May)
 
 concurrent_predictors <- concurrent_predictors %>%
   left_join(Nino34_index %>% select(Year, JA_Avg), 
@@ -92,19 +81,15 @@ concurrent_predictors <- concurrent_predictors %>%
 
 PNA_index <- read.table("~/Documents/R Repositories/Ch2_DataAnalysis/PNA_Index.txt", header = TRUE, sep = "", dec = ".")
 
-#may-june average
-PNA_index <- PNA_index %>%
-  mutate(MJ_Avg = rowMeans(select(., May, Jun), na.rm = TRUE))
-
-#JAS
+#JA
 PNA_index <- PNA_index %>%
   mutate(JA_Avg = rowMeans(select(., Jul, Aug), na.rm = TRUE))
 
 #add all to full predictor datasets
 preseason_predictors <- preseason_predictors %>%
-  left_join(PNA_index %>% select(Year, Jun, MJ_Avg), 
+  left_join(PNA_index %>% select(Year, Jun, May), 
             by = c("year" = "Year")) %>%
-  rename(PNA_June = Jun, PNA_MJ = MJ_Avg)
+  rename(PNA_June = Jun, PNA_May = May)
 
 concurrent_predictors <- concurrent_predictors %>%
   left_join(PNA_index %>% select(Year, JA_Avg), 
@@ -115,19 +100,15 @@ concurrent_predictors <- concurrent_predictors %>%
 
 NAM_index <- read.table("~/Documents/R Repositories/Ch2_DataAnalysis/NAM_Index.txt", header = TRUE, sep = "", dec = ".")
 
-#may-june average
-NAM_index <- NAM_index %>%
-  mutate(MJ_Avg = rowMeans(select(., May, Jun), na.rm = TRUE))
-
 #JAS
 NAM_index <- NAM_index %>%
   mutate(JA_Avg = rowMeans(select(., Jul, Aug), na.rm = TRUE))
 
 #add all to full predictor datasets
 preseason_predictors <- preseason_predictors %>%
-  left_join(NAM_index %>% select(Year, Jun, MJ_Avg), 
+  left_join(NAM_index %>% select(Year, Jun, May), 
             by = c("year" = "Year")) %>%
-  rename(NAM_June = Jun, NAM_MJ = MJ_Avg)
+  rename(NAM_June = Jun, NAM_May = May)
 
 concurrent_predictors <- concurrent_predictors %>%
   left_join(NAM_index %>% select(Year, JA_Avg), 
@@ -217,9 +198,9 @@ hist(unique_lakeIDs$distance,
 #pull out preseason predictors from MN_seasonalclimate
 preseason_climate <- MN_seasonalclimate %>%
   select(latitude, longitude, year, 
-         ttr_may, ttr_may_june, 
-         tsr_may, tsr_may_june, 
-         windspeed_may, windspeed_may_june)
+         ttr_may, ttr_june, 
+         tsr_may, tsr_june, 
+         windspeed_may, windspeed_june)
 
 #merge with lake ids
 preseason_climate_lakes <- unique_lakeIDs %>%
@@ -236,9 +217,9 @@ preseason_predictors <- preseason_predictors %>%
 
 concurrent_climate <- MN_seasonalclimate %>%
   select(latitude, longitude, year,
-         ttr_august, ttr_jas,
-         tsr_august, tsr_jas,
-         windspeed_august, windspeed_jas)
+         ttr_august, ttr_ja,
+         tsr_august, tsr_ja,
+         windspeed_august, windspeed_ja)
 
 # Merge with lake IDs
 concurrent_climate_lakes <- unique_lakeIDs %>%

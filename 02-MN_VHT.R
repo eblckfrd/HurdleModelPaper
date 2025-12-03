@@ -494,6 +494,7 @@ MN_VHT_calculator <- MN_VHT_calculator %>%
             select(lagoslakeid, trophic_state, depth_category, hydro_category, geo_position),
             by = c("link_lagosid" = "lagoslakeid"))
 
+#validate which months im using for summer low VHT -- july and august
 
 #find month with the most 0 value VHT
 zero_counts_all <- MN_VHT_calculator %>%
@@ -501,7 +502,6 @@ zero_counts_all <- MN_VHT_calculator %>%
   summarise(count_zeros = sum(VHT == 0, na.rm = TRUE))
 
 print(zero_counts_all)
-
 
 
 #Now can plot seasonality differences based on categories ------------------------------------------------
@@ -955,11 +955,10 @@ ggplot() +
     y = "JA VHT (m)"
   )
 
-#need to get 25 random lakes and put into csv to transfer over to python
 
-#use VHT_JA
 
 #new dataset called lake_VHT, with lagoslakeid, VHT, latitude, longitude, and year
+#transport to python scripts
 
 lake_VHT <- VHT_JA %>%
   left_join(unique_lakeIDs, by = c("link_lagosid" = "lagoslakeid")) %>%
@@ -975,6 +974,7 @@ lake_VHT <- VHT_JA %>%
 write.csv(lake_VHT, file = "~/Desktop/lake_VHT.csv", row.names = FALSE)
 
 #dataset of merged VHT and pre-season predictors
+#transfer into python
 
 # Make sure join keys have the same type
 lake_VHT <- lake_VHT %>%
