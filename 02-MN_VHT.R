@@ -165,8 +165,10 @@ missing_data_summary <- MN_selected_profiles %>%
 # Check the overlap
 table(missing_data_summary$missing_category)
 
+#out of 293,033 there are 22,034 profiles missing both temp and o2 data
+
 #Has both    Missing O2 only     Missing temp only 
-#21172.         4106.              756
+#22034         4194              775
 
 
 #Switching here to using MN_VHT_calculator going forward
@@ -178,6 +180,8 @@ MN_VHT_calculator <- MN_selected_profiles %>%
     any(!is.na(temp_c)) & any(!is.na(do_ppm))
   ) %>%
   ungroup()
+
+#now we have 277,501 profiles left
 
 #now calculate VHT
 MN_VHT_calculator <- MN_VHT_calculator %>%
@@ -303,8 +307,8 @@ case_summary <- MN_VHT_calculator %>%
 cat("Distribution of cases:\n")
 print(case_summary)
 
-#No suitable habitat (VHT = 0)      5321
-#Suitable habitat exists (VHT > 0) 15851
+#No suitable habitat (VHT = 0)      5817
+#Suitable habitat exists (VHT > 0) 16217
 
 # Check that VHT = o2_depth - temp_depth (should be TRUE for all rows)
 VHT_check <- MN_VHT_calculator %>%
@@ -374,7 +378,7 @@ weird_o2 <- MN_VHT_calculator %>%
   distinct()
 print(head(weird_o2))
 
-###look into lake 924...
+###look into lake 780?? temp depth of 30 but max lake depth 11.5...
 
 # Check for extreme VHT values
 cat("Profiles with VHT > 65m (potential outliers):\n")
@@ -494,14 +498,21 @@ MN_VHT_calculator <- MN_VHT_calculator %>%
             select(lagoslakeid, trophic_state, depth_category, hydro_category, geo_position),
             by = c("link_lagosid" = "lagoslakeid"))
 
-#validate which months im using for summer low VHT -- july and august
-
 #find month with the most 0 value VHT
 zero_counts_all <- MN_VHT_calculator %>%
   group_by(month) %>%
   summarise(count_zeros = sum(VHT == 0, na.rm = TRUE))
 
 print(zero_counts_all)
+
+#3         217
+#4          16
+#5         136
+#6        5437
+#7       30162
+#8       30378
+#9        4938
+#10         268
 
 
 #Now can plot seasonality differences based on categories ------------------------------------------------
@@ -511,8 +522,8 @@ print(zero_counts_all)
 # Define categories to loop through
 categories <- list(
   list(var = "hydro_category", values = c("Drainage", "Seepage"), title = "Hydrology"),
-  list(var = "trophic_state", values = c("Eutrophic", "Oligotrophic"), title = "Trophic State"),
-  list(var = "depth_category", values = c("Deep", "Shallow"), title = "Mean Depth"),
+  list(var = "trophic_state", values = c("Eutrophic", "Oligotrophic-Mesotrophic"), title = "Trophic State"),
+  list(var = "depth_category", values = c("Deep", "Medium"), title = "Max Depth"),
   list(var = "geo_position", values = c("South", "North"), title = "Geographic Position")
 )
 
@@ -701,12 +712,6 @@ for (cat in categories) {
 #normalizing the data shows a lot less variation....
 
 
-
-# Year-over-year trends by category
-
-
-
-
 # Year-over-year trend by geographic position ------------------------------------------------------------------
 
 # for geo plots
@@ -747,6 +752,12 @@ library(maps)
 minnesota <- map_data("state", region = "minnesota")
 mn_map <- map_data("state", region = "minnesota")
 
+ggplot(data = MN_VHT_calculator, aes(x = month)) +
+  geom_histogram(binwidth = 1, fill = "blue", color = "black", alpha = 0.7) +
+  theme_minimal()
+
+#I DONT KNOW WHY THIS IS BROKEN
+
 #Look at seasonal VHT patterns, only for the lakes that have sufficient samples
 seasonal_summary <- MN_VHT_calculator %>%
   filter(!is.na(VHT)) %>%
@@ -762,11 +773,24 @@ seasonal_summary <- MN_VHT_calculator %>%
     n_profiles = n(),
     .groups = "drop"
   ) %>%
-  filter(n_profiles >= 2) %>%
+  filter(n_profiles >= 1) %>%
   # Keep only lakes that have at least 2 profiles in BOTH seasons
-  group_by(link_lagosid) %>%
-  filter(n() == 2) %>%  # Ensures both Preseason and Concurrent seasons exist
+  group_by(link_lagosid) %>%  # Ensures both Preseason and Concurrent seasons exist
   ungroup()  # Only lakes with multiple profiles per season
+
+#create table showing seasonal changes
+seasonal_change <- seasonal_summary %>%
+  filter(!is.na(season)) %>%  # Remove rows where season is NA
+  pivot_wider(
+    id_cols = c(link_lagosid, latitude, longitude),
+    names_from = season, 
+    values_from = avg_VHT,
+    values_fn = mean
+  ) %>%
+  filter(!is.na(Preseason) & !is.na(Concurrent)) %>%
+  mutate(VHT_change = Concurrent - Preseason)
+#summarize
+summary(seasonal_change$VHT_change)
 
 #create table showing seasonal changes
 seasonal_change <- seasonal_summary %>%
@@ -1010,11 +1034,11 @@ ConcurrentPreseason_Model_insert <- inner_join(
 )
 
 #checks
-setdiff(unique_lakeIDs$lagoslakeid, Model_insert$lagoslakeid)
+setdiff(unique_lakeIDs$lagoslakeid, Model_insert$lagoslakeid) #3548  4025 26374
 
-uniqueN(Model_insert$lagoslakeid) #170
+uniqueN(Model_insert$lagoslakeid) #198
 
-uniqueN(unique_lakeIDs$lagoslakeid) #171
+uniqueN(unique_lakeIDs$lagoslakeid) #201
 
 #save
 write.csv(Model_insert, file = "~/Desktop/Model_insert.csv", row.names = FALSE)
