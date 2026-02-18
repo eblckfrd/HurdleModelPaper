@@ -168,8 +168,7 @@ table(missing_data_summary$missing_category)
 #out of 293,033 there are 22,034 profiles missing both temp and o2 data
 
 #Has both    Missing O2 only     Missing temp only 
-#22034         4194              775
-
+#19463              3986               678
 
 #Switching here to using MN_VHT_calculator going forward
 
@@ -181,7 +180,7 @@ MN_VHT_calculator <- MN_selected_profiles %>%
   ) %>%
   ungroup()
 
-#now we have 277,501 profiles left
+#now we have 24,6397 profiles left
 
 #now calculate VHT
 MN_VHT_calculator <- MN_VHT_calculator %>%
@@ -307,8 +306,8 @@ case_summary <- MN_VHT_calculator %>%
 cat("Distribution of cases:\n")
 print(case_summary)
 
-#No suitable habitat (VHT = 0)      5817
-#Suitable habitat exists (VHT > 0) 16217
+#No suitable habitat (VHT = 0)      5143
+#Suitable habitat exists (VHT > 0) 14320
 
 # Check that VHT = o2_depth - temp_depth (should be TRUE for all rows)
 VHT_check <- MN_VHT_calculator %>%
@@ -378,7 +377,7 @@ weird_o2 <- MN_VHT_calculator %>%
   distinct()
 print(head(weird_o2))
 
-###look into lake 780?? temp depth of 30 but max lake depth 11.5...
+###look into lake 531?
 
 # Check for extreme VHT values
 cat("Profiles with VHT > 65m (potential outliers):\n")
@@ -387,22 +386,6 @@ extreme_vht <- MN_VHT_calculator %>%
   select(link_lagosid, date, temp_depth, o2_depth, VHT, lake_maxdepth_m) %>%
   distinct()
 print(extreme_vht)
-
-# Check for unrealistic values
-cat("\nDistribution checks:\n")
-cat("Profiles where temp_depth > max lake depth:\n")
-weird_temp <- MN_VHT_calculator %>%
-  filter(temp_depth > lake_maxdepth_m) %>%
-  select(link_lagosid, date, temp_depth, lake_maxdepth_m) %>%
-  distinct()
-print(head(weird_temp))
-
-cat("Profiles where o2_depth > max lake depth:\n")
-weird_o2 <- MN_VHT_calculator %>%
-  filter(o2_depth > lake_maxdepth_m) %>%
-  select(link_lagosid, date, o2_depth, lake_maxdepth_m) %>%
-  distinct()
-print(head(weird_o2))
 
 # Check that each profile has the same VHT values across all depths
 profile_consistency <- MN_VHT_calculator %>%
@@ -522,8 +505,8 @@ print(zero_counts_all)
 # Define categories to loop through
 categories <- list(
   list(var = "hydro_category", values = c("Drainage", "Seepage"), title = "Hydrology"),
-  list(var = "trophic_state", values = c("Eutrophic", "Oligotrophic-Mesotrophic"), title = "Trophic State"),
-  list(var = "depth_category", values = c("Deep", "Medium"), title = "Max Depth"),
+  list(var = "trophic_state", values = c("Eutrophic", "Oligotrophic"), title = "Trophic State"),
+  list(var = "depth_category", values = c("Deep", "Shallow"), title = "Max Depth"),
   list(var = "geo_position", values = c("South", "North"), title = "Geographic Position")
 )
 
@@ -566,7 +549,7 @@ for (cat in categories) {
   
   # Save to desktop
   #ggsave(filename = paste0("~/Desktop/", custom_title, "_Seasonal_Patterns.png"), 
-  #       plot = p, width = 10, height = 6, dpi = 300)
+         #plot = p, width = 10, height = 6, dpi = 300)
 }
 
 #NOW NORMALIZE BY MAX DEPTH AND REPLOT
@@ -657,8 +640,8 @@ for (cat in categories) {
   print(p)
   
   # Save to desktop
-  #ggsave(filename = paste0("~/Desktop/", custom_title, "_Ribbon_Plot.png"), 
-  #       plot = p, width = 10, height = 6, dpi = 300)
+  ggsave(filename = paste0("~/Desktop/", custom_title, "_Ribbon_Plot.png"), 
+         plot = p, width = 10, height = 6, dpi = 300)
 }
 
 
@@ -756,8 +739,6 @@ ggplot(data = MN_VHT_calculator, aes(x = month)) +
   geom_histogram(binwidth = 1, fill = "blue", color = "black", alpha = 0.7) +
   theme_minimal()
 
-#I DONT KNOW WHY THIS IS BROKEN
-
 #Look at seasonal VHT patterns, only for the lakes that have sufficient samples
 seasonal_summary <- MN_VHT_calculator %>%
   filter(!is.na(VHT)) %>%
@@ -853,7 +834,6 @@ ggplot() +
     axis.text = element_blank(),
     panel.grid = element_blank()
   )
-
 
 
 #investigate lakes that are showing increases...
@@ -1034,11 +1014,11 @@ ConcurrentPreseason_Model_insert <- inner_join(
 )
 
 #checks
-setdiff(unique_lakeIDs$lagoslakeid, Model_insert$lagoslakeid) #3548  4025 26374
+setdiff(unique_lakeIDs$lagoslakeid, Model_insert$lagoslakeid) #3548
 
-uniqueN(Model_insert$lagoslakeid) #198
+uniqueN(Model_insert$lagoslakeid) #151
 
-uniqueN(unique_lakeIDs$lagoslakeid) #201
+uniqueN(unique_lakeIDs$lagoslakeid) #152
 
 #save
 write.csv(Model_insert, file = "~/Desktop/Model_insert.csv", row.names = FALSE)

@@ -379,9 +379,6 @@ ggplot(data = MN_profiles_final, aes(x = year)) +
 
 #---------------------------------------------------------------------
 
-#FIGURING OUT THIS SECTION, DO NOT MOVE FORWARD UNTIL DECIDING WHAT LENGTH YEARS TO USE
-  #testing 10+ year then looking at spread, can go down to 7+ years if need to
-
 # Filter for any specific months? Mar-Oct, 371412 obs left
 MN_profiles_final <- MN_profiles_final %>%
   filter(month >= 3 & month <= 10)
@@ -405,16 +402,16 @@ ggplot(data = summer_years_per_lake, aes(x = n_summer_years)) +
   geom_histogram(binwidth = 1, fill = "blue", color = "black", alpha = 0.7) +
   theme_minimal()
 
-# Keep lakes with at least 7 years of summer samples
+# Keep lakes with at least 10 years of summer samples
 lakes_with_10plus_summer_years <- summer_years_per_lake %>%
-  filter(n_summer_years >= 7) %>%
+  filter(n_summer_years >= 10) %>%
   arrange(desc(n_summer_years))
 
-#201 with 7+ years
+#152 lakes
 
 hist(lakes_with_10plus_summer_years$n_summer_years)
 
-#filter profiles dataset with only those 201 lakes
+#filter profiles dataset with only those 152
 
 MN_profiles_final <- MN_profiles_final %>%
   filter(link_lagosid %in% lakes_with_10plus_summer_years$link_lagosid)
@@ -497,7 +494,7 @@ MN_selected_profiles <- MN_profiles_final %>%
   filter(link_lagosid %in% unique_lakeIDs$link_lagosid)
 
 #check that this worked; it did! 
-n_distinct(MN_selected_profiles$link_lagosid) #201
+n_distinct(MN_selected_profiles$link_lagosid) #152
 
 
 ####ignore this, ended up not being an issue with random forest models, they allow for non-consecutive samples as long as predictor years match --------
@@ -792,7 +789,6 @@ unique_lakeIDs <- unique_lakeIDs %>%
 
 # ----
 
-
 # From secchi depth, calculate TSI for each lake: 60 - (14.41 * ln(secci #)) and put in new column
 
 unique_lakeIDs <- unique_lakeIDs %>%
@@ -812,34 +808,50 @@ ggplot(unique_lakeIDs, aes(x = secchi)) +
   geom_histogram(binwidth = 2, color = "black", fill = "skyblue")+
   theme_minimal()
 
-# Then assign oligotrophic and mesotrophic as <50, and eutrophic as >50; based on carlson TSI classification
+# -------------
+
+#try using 33% instead of using ecological cut offs
+  
+cuts <- quantile(unique_lakeIDs$TSI, probs = c(1/3, 2/3), na.rm = TRUE, type = 7)
 
 unique_lakeIDs <- unique_lakeIDs %>%
-  mutate(trophic_state = case_when(
-    TSI < 50 ~ "Oligotrophic-Mesotrophic",
-    TSI > 50 ~ "Eutrophic"
-  ))
+  mutate(
+    trophic_state = case_when(
+      TSI <= cuts[[1]] ~ "Oligotrophic",
+      TSI >= cuts[[2]] ~ "Eutrophic",
+      TRUE             ~ "Mesotrophic"
+    ),
+    trophic_state = factor(trophic_state, levels = c("Oligotrophic","Mesotrophic","Eutrophic"))
+  )
 
-#see how many is in each column
-table(unique_lakeIDs$trophic_state)
+# 3) Check counts
+table(unique_lakeIDs$trophic_state, useNA = "ifany")
 
-#Eutrophic  Mesotrophic-Oligotrophic 
-#94           107
+#51 oligotrophic, 50 meso, 51 eutrophic
 
-
-#color histogram by trophic state
 ggplot(unique_lakeIDs, aes(x = TSI, fill = trophic_state)) +
-  geom_histogram(binwidth = 2, color = "black", position = "identity", alpha = 0.7) +
-  labs(title = "Histogram of TSI by Trophic State",
-       x = "Trophic State Index (TSI)",
-       y = "Number of Lakes",
-       fill = "Trophic State") +
-  scale_fill_manual(values = c("Oligotrophic-Mesotrophic" = "skyblue", "Eutrophic" = "forestgreen")) +
+  geom_histogram(
+    binwidth = 2,
+    color = "black",
+    position = "identity",
+    alpha = 0.6
+  ) +
+  labs(
+    title = "Histogram of TSI by Trophic State (Tertiles)",
+    x = "Trophic State Index (TSI)",
+    y = "Number of Lakes",
+    fill = "Trophic State"
+  ) +
+  scale_fill_manual(values = c(
+    "Oligotrophic" = "#8BD3D8",
+    "Mesotrophic"  = "#FCB614",
+    "Eutrophic"    = "#1B5E20"
+  )) +
   theme_minimal()
 
-#color on map by trophic state
 ggplot(unique_lakeIDs, aes(x = longitude, y = latitude, color = trophic_state)) +
-  borders("state", regions = "minnesota", fill = "gray95", colour = "gray70") +
+  borders("state", regions = "minnesota",
+          fill = "gray95", colour = "gray70") +
   geom_point(size = 2, alpha = 0.8) +
   coord_quickmap(
     xlim = c(-97.5, -89),
@@ -847,14 +859,64 @@ ggplot(unique_lakeIDs, aes(x = longitude, y = latitude, color = trophic_state)) 
   ) +
   scale_color_manual(
     name = "Trophic State",
-    values = c("Oligotrophic-Mesotrophic" = "skyblue", "Eutrophic" = "forestgreen")
+    values = c(
+      "Oligotrophic" = "#8BD3D8",
+      "Mesotrophic"  = "#FCB614",
+      "Eutrophic"    = "#1B5E20"
+    )
   ) +
   theme_minimal() +
   labs(
-    title = "Minnesota Lakes Trophic State",
+    title = "Minnesota Lakes Trophic State (Tertiles)",
     x = "Longitude",
     y = "Latitude"
   )
+
+#-------------------------------------
+
+# Then assign oligotrophic and mesotrophic as <50, and eutrophic as >50; based on carlson TSI classification
+
+# unique_lakeIDs <- unique_lakeIDs %>%
+#   mutate(trophic_state = case_when(
+#     TSI <= 40 ~ "Oligotrophic",
+#     TSI >= 50 ~ "Eutrophic"
+#   ))
+# 
+# #see how many is in each column
+# table(unique_lakeIDs$trophic_state)
+# 
+# #Eutrophic  Oligotrophic 
+# #70         27
+# 
+# 
+# #color histogram by trophic state
+# ggplot(unique_lakeIDs, aes(x = TSI, fill = trophic_state)) +
+#   geom_histogram(binwidth = 2, color = "black", position = "identity", alpha = 0.7) +
+#   labs(title = "Histogram of TSI by Trophic State",
+#        x = "Trophic State Index (TSI)",
+#        y = "Number of Lakes",
+#        fill = "Trophic State") +
+#   scale_fill_manual(values = c("Oligotrophic" = "skyblue", "Eutrophic" = "forestgreen")) +
+#   theme_minimal()
+# 
+# #color on map by trophic state
+# ggplot(unique_lakeIDs, aes(x = longitude, y = latitude, color = trophic_state)) +
+#   borders("state", regions = "minnesota", fill = "gray95", colour = "gray70") +
+#   geom_point(size = 2, alpha = 0.8) +
+#   coord_quickmap(
+#     xlim = c(-97.5, -89),
+#     ylim = c(43.5, 49.5)
+#   ) +
+#   scale_color_manual(
+#     name = "Trophic State",
+#     values = c("Oligotrophic" = "skyblue", "Eutrophic" = "forestgreen")
+#   ) +
+#   theme_minimal() +
+#   labs(
+#     title = "Minnesota Lakes Trophic State",
+#     x = "Longitude",
+#     y = "Latitude"
+#   )
 
 #even though mean depth might be a better depth separator (according to Wetzel's Limno), but only have max depth available through LAGOS and profiles dataset
 
@@ -901,84 +963,52 @@ MN_selected_profiles <- MN_selected_profiles[
 
 #depth category -----------------------------
 
-mean_depth <- mean(unique_lakeIDs$lake_maxdepth_m, na.rm = TRUE) #13.7
-sd_depth <- sd(unique_lakeIDs$lake_maxdepth_m, na.rm = TRUE) #6.69
+mean_depth <- mean(unique_lakeIDs$lake_maxdepth_m, na.rm = TRUE) #14.2
+sd_depth <- sd(unique_lakeIDs$lake_maxdepth_m, na.rm = TRUE) #6.7
 
-#use k-means clustering on max depths, to see where to separate them into two categories
+depth_cuts <- quantile(
+  unique_lakeIDs$lake_maxdepth_m,
+  probs = c(1/3, 2/3),
+  na.rm = TRUE,
+  type = 7
+)
 
-cluster_data <- unique_lakeIDs %>%
-  select(lake_maxdepth_m) 
-
-set.seed(123)  #for reproducibility
-kmeans_result <- kmeans(cluster_data, centers = 2)  
-
-#add cluster assignments back to original dataset
-unique_lakeIDs$cluster <- factor(kmeans_result$cluster)
-
-#look at results
-kmeans_result$centers
-
-#plot
-ggplot(unique_lakeIDs, aes(x = longitude, y = latitude)) +
-  borders("state", regions = "minnesota", fill = "gray95", color = "grey70") +
-  geom_point(aes(color = cluster), size = 2) +
-  coord_fixed(1.3) +
-  labs(title = "K-means Clustering of Depths",
-       color = "Cluster",
-       x = "Longitude",
-       y = "Latitude"
-  ) +
-  theme_minimal()
-
-#which lakes are in which?
-# Look at the range of depths in each cluster
-unique_lakeIDs %>%
-  group_by(cluster) %>%
-  summarise(
-    min_depth = min(lake_maxdepth_m),
-    max_depth = max(lake_maxdepth_m),
-    mean_depth = mean(lake_maxdepth_m)
+unique_lakeIDs <- unique_lakeIDs %>%
+  mutate(
+    depth_category = case_when(
+      lake_maxdepth_m <= depth_cuts[[1]] ~ "Shallow",
+      lake_maxdepth_m >= depth_cuts[[2]] ~ "Deep",
+      TRUE                               ~ "Moderate"
+    ),
+    depth_category = factor(
+      depth_category,
+      levels = c("Shallow", "Moderate", "Deep")
+    )
   )
 
-#cluster    min_depth    max_depth    mean_depth
-#1           3.35      16.5       10.7
-#2           16.7       56.0       22.5
+table(unique_lakeIDs$depth_category, useNA = "ifany")
 
-ggplot(unique_lakeIDs, aes(x = lake_maxdepth_m, fill = cluster)) +
-  geom_histogram(binwidth = 2, alpha = 0.7, position = "identity") +
-  labs(title = "Distribution of Lake Depths by Cluster")
+#shallow 51, moderate 50, deep 51
 
-
-#classify lakes
-unique_lakeIDs <- unique_lakeIDs %>%
-  mutate(depth_category = case_when(
-    lake_maxdepth_m < shallow_cut ~ "Shallow",
-    lake_maxdepth_m > deep_cut ~ "Deep",
-    TRUE ~ "Medium"  
-  ))
-
-unique_lakeIDs <- unique_lakeIDs %>%
-  mutate(depth_category = case_when(
-    cluster == 1 ~ "Medium",
-    cluster == 2 ~ "Deep"
-  ))
-
-#see how many is in each column
-table(unique_lakeIDs$depth_category)
-
-#Deep  Medium 
-#52  #149
-
-
-#count categories; there is some crossover, but not entirely 
-unique_lakeIDs %>%
-  count(trophic_state, depth_category)
-
-#Eutrophic                Deep              16
-#Eutrophic                Medium            78
-#Oligotrophic-Mesotrophic Deep              36
-#Oligotrophic-Mesotrophic Medium            71
-
+ggplot(unique_lakeIDs, aes(x = lake_maxdepth_m, fill = depth_category)) +
+  geom_histogram(
+    binwidth = 2,
+    color = "black",
+    position = "identity",
+    alpha = 0.6
+  ) +
+  scale_fill_manual(values = c(
+    "Shallow"  = "#A5D6A7",
+    "Moderate" = "#64B5F6",
+    "Deep"     = "#283593"
+  )) +
+  labs(
+    title = "Histogram of Lake Maximum Depth (Tertiles)",
+    x = "Maximum Depth (m)",
+    y = "Number of Lakes",
+    fill = "Depth Category"
+  ) +
+  theme_minimal()
 
 #now for hydrology category, seepage (or "isolated" vs. drainage)
 
@@ -993,7 +1023,7 @@ lake_characteristics <- lake_characteristics %>%
 table(lake_characteristics$lake_connectivity_permanent)
 
 #Drainage DrainageLk  Headwater   Isolated   Terminal TerminalLk 
-# 29         79         21         62          9          1 
+# 22         66         15         40          8          1 
 
 
 #I AM DECIDING TO ONLY USE PERMANENT FLOW.... NOT CONSIDERING BOTH PERMAMENT AND INTERMITTENT-EPHERMERAL FLOW -------
@@ -1002,13 +1032,13 @@ table(lake_characteristics$lake_connectivity_permanent)
 table(lake_characteristics$lake_connectivity_fluctuates)
 
 #N   Y 
-#174 27
+#134 18
 
 #see how many is in each hydro column
 table(lake_characteristics$lake_connectivity_class)
 
 #Drainage DrainageLk  Headwater   Isolated   Terminal 
-#31         92         18         53          7
+#21         76         14         35          6
 
 
 #code definitions --
@@ -1041,7 +1071,7 @@ unique_lakeIDs <- unique_lakeIDs %>%
 table(unique_lakeIDs$hydro_category)
 
 #Drainage  Seepage 
-#139.      62
+#112       40
 
 #missing lat and lon in unique_lakeIDs for lake 79457 -- pull from LAGOSNE_lakeslocus 101
 
@@ -1090,7 +1120,7 @@ unique_lakeIDs <- unique_lakeIDs %>%
 table(unique_lakeIDs$geo_position)
 
 #North South 
-#53    148
+#37 115
 
 
 ##make a figure for prelim proposal --------------------------------------------------
@@ -1145,7 +1175,7 @@ p2 <- ggplot(unique_lakeIDs %>% filter(trophic_state != "Mesotrophic"),
   )
 
 
-p3 <- ggplot(unique_lakeIDs %>% filter(depth_category != "Medium"),
+p3 <- ggplot(unique_lakeIDs %>% filter(depth_category != "Moderate"),
   aes(x = longitude, y = latitude, color = depth_category)) +
   borders("state", regions = "minnesota", fill = "gray95", colour = "gray70") +
   geom_point(size = 2, alpha = 0.8) +
@@ -1348,7 +1378,7 @@ sum(is.nan(as.matrix(preseason_waterq_predictors)))
 sapply(preseason_waterq_predictors, function(x) sum(is.nan(x)))
 
 #chla_may   chla_june      tp_may     tp_june  secchi_may secchi_june   wtemp_may  wtemp_june
-#2416        2057        4063        3890        1140         227        3072.      2682
+#1636        1370        2851        2697         759         116        1895        1583
 
 
 ## TRIM down to only years for each lake that have profiles in MN_selected_profiles
@@ -1371,14 +1401,14 @@ concurrent_waterq_predictors <- LAGOSwaterquality %>%
     .groups = "drop"
   )
 
-#counts NaNs.. 7511
+#counts NaNs.. 5528
 sum(is.nan(as.matrix(concurrent_waterq_predictors))) 
 
 #see which columns they are mostly in: 
 sapply(concurrent_waterq_predictors, function(x) sum(is.nan(x)))
 
 #chla_JA       tp_JA   secchi_JA    wtemp_JA 
-#1913        3847          66        2637
+#1284        2676          18        1550
 
 ## TRIM down to only year for each lake that have profiles in MN_selectedprofiles
 concurrent_waterq_predictors <- concurrent_waterq_predictors %>%
@@ -1408,284 +1438,3 @@ write.csv(lake_categories, file = "~/Desktop/lake_categories.csv", row.names = F
 #R version 4.3.1 (2023-06-16)
 #Platform: x86_64-apple-darwin20 (64-bit)
 #Running under: macOS 15.4.1
-
-
-#confusing ice data ----------------------------------------------------------------------------------------
-
-#predictors needed for all years: ice-on time, water level
-#use winter.year to filter years
-ice_data <- ice_data %>%
-  filter(winter.year >= 1980 & winter.year <= 2020)
-
-#how many lakes are there with ice data: 1188 
-print(paste("Unique lake IDs:", length(unique(ice_data$DOW))))
-
-#ice duration processing; first trim down columns
-#keep winter.year, DOW, min_duration
-ice_data <- ice_data %>%
-  select(DOW, winter.year, min_duration)
-
-
-
-# First, get ONE lat/lon for each state_ident from full_MN_profiles
-mn_coords <- FULL_MN_profiles %>%
-  select(state_ident, latitude, longitude) %>%
-  distinct(state_ident, .keep_all = TRUE)  # Get one row per state_ident
-
-# Get unique DOW values and join with coordinates
-ice_locations_all <- ice_data %>%
-  distinct(DOW) %>%  # Get unique DOW values
-  mutate(DOW = as.character(DOW)) %>%  # Convert to character
-  left_join(
-    mn_coords %>% mutate(state_ident = as.character(state_ident)),
-    by = c("DOW" = "state_ident")
-  )
-
-# Check for missing coordinates
-print(paste("Ice data lakes missing coordinates:", 
-            sum(is.na(ice_locations_all$latitude) | is.na(ice_locations_all$longitude))))
-
-
-# Create sf object only from lakes WITH coordinates for matching
-ice_locations_sf <- ice_locations_all %>%
-  filter(!is.na(latitude) & !is.na(longitude)) %>%
-  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
-
-# Check unique_lakeIDs for missing coordinates
-print(paste("unique_lakeIDs missing coordinates:", 
-            sum(is.na(unique_lakeIDs$latitude) | is.na(unique_lakeIDs$longitude))))
-
-# Convert unique_lakeIDs to sf object (only those with coordinates)
-unique_lakes_with_coords <- unique_lakeIDs %>%
-  filter(!is.na(latitude) & !is.na(longitude))
-
-unique_lakes_sf <- unique_lakes_with_coords %>%
-  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
-
-# Find nearest lake in ice_data for each lake in unique_lakeIDs
-nearest_matches <- st_nearest_feature(unique_lakes_sf, ice_locations_sf)
-
-# Create a crosswalk table linking lagoslakeid to DOW
-lake_crosswalk <- data.frame(
-  lagoslakeid = unique_lakes_with_coords$lagoslakeid,
-  DOW = ice_locations_sf$DOW[nearest_matches],
-  distance_m = st_distance(unique_lakes_sf, ice_locations_sf[nearest_matches, ], by_element = TRUE)
-)
-
-# Check the distances to ensure good matches
-summary(as.numeric(lake_crosswalk$distance_m))
-
-
-# Check the coordinate ranges for both datasets
-print("Ice locations coordinates:")
-summary(ice_locations_all %>% filter(!is.na(latitude), !is.na(longitude)))
-
-print("Unique lakes coordinates:")
-summary(unique_lakeIDs %>% filter(!is.na(latitude), !is.na(longitude)))
-
-# Look at a few examples from each
-print("Sample ice locations:")
-head(ice_locations_all %>% filter(!is.na(latitude), !is.na(longitude)))
-
-print("Sample unique lakes:")
-head(unique_lakeIDs %>% filter(!is.na(latitude), !is.na(longitude)))
-
-
-# Check if state_ident values in full_MN_profiles match DOW values in ice_data
-mn_state_idents <- FULL_MN_profiles %>%
-  distinct(state_ident) %>%
-  pull(state_ident)
-
-ice_DOWs <- ice_data %>%
-  distinct(DOW) %>%
-  pull(DOW)
-
-print(paste("Unique state_idents in full_MN_profiles:", length(mn_state_idents)))
-print(paste("Unique DOWs in ice_data:", length(ice_DOWs)))
-print(paste("DOWs that match state_idents:", sum(as.character(ice_DOWs) %in% as.character(mn_state_idents))))
-
-# Check if unique_lakeIDs has a DOW or state_ident column
-print("Columns in unique_lakeIDs:")
-print(colnames(unique_lakeIDs))
-
-
-
-# Get the linking table: DOW -> link_lagosid from FULL_MN_profiles
-# Remove NAs and get one row per state_ident with its link_lagosid
-link_table <- FULL_MN_profiles %>%
-  select(state_ident, link_lagosid) %>%
-  filter(!is.na(link_lagosid)) %>%  # Remove rows with NA link_lagosid
-  distinct(state_ident, link_lagosid)
-
-# Check for duplicates again (one state_ident matching multiple link_lagosids)
-duplicates <- link_table %>%
-  group_by(state_ident) %>%
-  filter(n() > 1) %>%
-  arrange(state_ident)
-
-print(paste("State_idents with multiple link_lagosids:", n_distinct(duplicates$state_ident)))
-
-if(nrow(duplicates) > 0) {
-  print("Warning: Some state_idents still have multiple link_lagosids after removing NAs")
-  print(head(duplicates, 20))
-  # Keep first occurrence for now
-  link_table <- link_table %>%
-    distinct(state_ident, .keep_all = TRUE)
-}
-
-# Join ice_data to the link table to get link_lagosid
-ice_data_with_lagos <- ice_data %>%
-  left_join(
-    link_table,
-    by = c("DOW" = "state_ident")
-  )
-
-# Check matching success
-print(paste("Total ice data rows:", nrow(ice_data_with_lagos)))
-print(paste("Ice data rows with link_lagosid:", sum(!is.na(ice_data_with_lagos$link_lagosid))))
-print(paste("Unique DOWs in ice data:", n_distinct(ice_data$DOW)))
-print(paste("Unique DOWs matched to link_lagosid:", n_distinct(ice_data_with_lagos$link_lagosid[!is.na(ice_data_with_lagos$link_lagosid)])))
-
-# Now join to unique_lakeIDs (matching link_lagosid to lagoslakeid)
-unique_lakeIDs_with_ice <- unique_lakeIDs %>%
-  left_join(
-    ice_data_with_lagos %>% select(link_lagosid, DOW, winter.year, min_duration),
-    by = c("lagoslakeid" = "link_lagosid")
-  )
-
-# Final summary
-print(paste("Total lakes in unique_lakeIDs:", n_distinct(unique_lakeIDs$lagoslakeid)))
-print(paste("Lakes in unique_lakeIDs with ice data:", n_distinct(unique_lakeIDs_with_ice$lagoslakeid[!is.na(unique_lakeIDs_with_ice$min_duration)])))
-print(paste("Total rows with ice data (including all years):", sum(!is.na(unique_lakeIDs_with_ice$min_duration))))
-
-# See which lakes are missing ice data
-lakes_without_ice <- unique_lakeIDs %>%
-  anti_join(ice_data_with_lagos, by = c("lagoslakeid" = "link_lagosid")) %>%
-  select(lagoslakeid, latitude, longitude)
-
-print(paste("Lakes WITHOUT ice data:", nrow(lakes_without_ice)))
-
-unique_lakeIDs_with_ice %>%
-  filter(!is.na(min_duration)) %>%
-  select(lagoslakeid, DOW, winter.year, min_duration) %>%
-  head(20)
-
-
-
-#exploring ice data from LIAG
-#NO MATCHES
-
-liag_icedata <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/liag_ice.csv")
-  
-#how many lakes are there with ice data: 68
-print(paste("Unique lake IDs:", length(unique(liag_icedata$lakecode))))
-
-# Get unique lake locations from liag_icedata
-liag_locations <- liag_icedata %>%
-  distinct(lakecode, latitude, longitude) %>%  # adjust column names as needed
-  filter(!is.na(latitude) & !is.na(longitude)) %>%
-  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
-
-print(paste("Unique lakes in liag_icedata with coordinates:", nrow(liag_locations)))
-
-# Convert lakes_without_ice to sf object
-lakes_without_ice_sf <- lakes_without_ice %>%
-  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
-
-# Find nearest lake in liag_icedata for each missing lake
-nearest_liag <- st_nearest_feature(lakes_without_ice_sf, liag_locations)
-
-# Create a matching table
-liag_matches <- data.frame(
-  lagoslakeid = lakes_without_ice$lagoslakeid,
-  lakecode_liag = liag_locations$lakecode[nearest_liag],
-  distance_m = st_distance(lakes_without_ice_sf, liag_locations[nearest_liag, ], by_element = TRUE)
-)
-
-# Check distances
-summary(as.numeric(liag_matches$distance_m))
-
-
-
-# First, get locations from the DOW ice data
-dow_ice_locations <- ice_data_with_lagos %>%
-  filter(!is.na(link_lagosid)) %>%
-  distinct(link_lagosid, DOW) %>%
-  left_join(
-    FULL_MN_profiles %>% 
-      select(state_ident, link_lagosid, latitude, longitude) %>%
-      filter(!is.na(link_lagosid)) %>%
-      distinct(link_lagosid, .keep_all = TRUE),
-    by = "link_lagosid"
-  ) %>%
-  filter(!is.na(latitude) & !is.na(longitude)) %>%
-  mutate(source = "DOW") %>%
-  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
-
-# Get locations from LIAG ice data
-liag_ice_locations <- liag_icedata %>%
-  distinct(lakecode, latitude, longitude) %>%  # adjust column names
-  filter(!is.na(latitude) & !is.na(longitude)) %>%
-  mutate(source = "LIAG") %>%
-  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
-
-# Combine both
-all_ice_locations <- bind_rows(
-  dow_ice_locations %>% select(source, geometry),
-  liag_ice_locations %>% select(source, geometry)
-)
-
-print(paste("Total lakes with ice data:", nrow(all_ice_locations)))
-
-# Convert lakes_without_ice to sf
-lakes_without_ice_sf <- lakes_without_ice %>%
-  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
-
-# Find nearest lake with ice data for each missing lake
-nearest_ice <- st_nearest_feature(lakes_without_ice_sf, all_ice_locations)
-
-# Create matching table with distances
-closest_matches <- data.frame(
-  lagoslakeid = lakes_without_ice$lagoslakeid,
-  nearest_source = all_ice_locations$source[nearest_ice],
-  distance_m = st_distance(lakes_without_ice_sf, all_ice_locations[nearest_ice, ], by_element = TRUE)
-) %>%
-  arrange(distance_m)
-
-# Summary
-summary(as.numeric(closest_matches$distance_m))
-
-library(maps)
-
-# Get Minnesota state boundary
-minnesota <- map_data("state", region = "minnesota")
-
-lake_ice_status <- unique_lakeIDs %>%
-  mutate(
-    has_ice = lagoslakeid %in% unique_lakeIDs_with_ice$lagoslakeid[!is.na(unique_lakeIDs_with_ice$min_duration)]
-  ) %>%
-  mutate(ice_status = ifelse(has_ice, "Has Ice Data (92 lakes)", "No Ice Data (79 lakes)")) %>%
-  select(lagoslakeid, latitude, longitude, has_ice_data, ice_status)
-
-
-# Create the map with Minnesota boundary
-ggplot() +
-  geom_polygon(data = minnesota, 
-               aes(x = long, y = lat, group = group),
-               fill = "gray95", color = "gray50", linewidth = 0.5) +
-  geom_point(data = lake_ice_status, 
-             aes(x = longitude, y = latitude, color = ice_status),
-             size = 3, alpha = 0.8) +
-  scale_color_manual(values = c("Has Ice Data (92 lakes)" = "#2166ac", 
-                                "No Ice Data (79 lakes)" = "#d73027")) +
-  labs(title = "Minnesota Lakes: Ice Data Availability",
-       subtitle = "171 lakes from unique_lakeIDs dataset",
-       x = "Longitude",
-       y = "Latitude",
-       color = "Status") +
-  theme_minimal() +
-  theme(legend.position = "bottom",
-        legend.title = element_text(face = "bold")) +
-  coord_map()
-
-

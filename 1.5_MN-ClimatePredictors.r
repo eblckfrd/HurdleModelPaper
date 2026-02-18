@@ -245,7 +245,6 @@ sapply(preseason_predictors, function(x) sum(is.nan(x)))
 #preseason_predictors: all processed pre-season predictors for June, and MJ
 
 
-
 write.csv(unique_lakeIDs, file = "~/Desktop/unique_lakeIDs.csv", row.names = FALSE)
 
 # Continue on in R script 02-MN_VHT.R then switch to jupyter hub notebooks
