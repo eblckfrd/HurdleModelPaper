@@ -28,7 +28,7 @@ library(data.table)
 
 first_five_lakes <- MN_selected_profiles %>%
   distinct(link_lagosid) %>%
-  slice(57:61)
+  slice(1:5)
 
 firstfive_lakedata <- MN_selected_profiles %>%
   filter(link_lagosid %in% first_five_lakes$link_lagosid) %>%
@@ -165,10 +165,8 @@ missing_data_summary <- MN_selected_profiles %>%
 # Check the overlap
 table(missing_data_summary$missing_category)
 
-#out of 293,033 there are 22,034 profiles missing both temp and o2 data
-
 #Has both    Missing O2 only     Missing temp only 
-#19463              3986               678
+#26893              4897               969
 
 #Switching here to using MN_VHT_calculator going forward
 
@@ -180,7 +178,7 @@ MN_VHT_calculator <- MN_selected_profiles %>%
   ) %>%
   ungroup()
 
-#now we have 24,6397 profiles left
+#now we have 33,5237 profiles left
 
 #now calculate VHT
 MN_VHT_calculator <- MN_VHT_calculator %>%
@@ -239,11 +237,11 @@ summary(MN_VHT_calculator[c("temp_depth", "o2_depth", "VHT")])
 
 # temp_depth        o2_depth           VHT        
 # Min.   : 0.000   Min.   : 0.000   Min.   : 0.000  
-# 1st Qu.: 0.000   1st Qu.: 5.000   1st Qu.: 0.114  
-# Median : 0.300   Median : 7.000   Median : 5.000  
-# Mean   : 2.048   Mean   : 8.691   Mean   : 6.807  
-# 3rd Qu.: 4.000   3rd Qu.:10.000   3rd Qu.: 9.000  
-# Max.   :18.000   Max.   :56.038   Max.   :56.038
+# 1st Qu.: 0.000   1st Qu.: 5.000   1st Qu.: 0.987  
+# Median : 0.318   Median : 7.000   Median : 5.000  
+# Mean   : 2.108   Mean   : 8.658   Mean   : 6.714  
+# 3rd Qu.: 4.010   3rd Qu.:10.000   3rd Qu.: 9.000  
+# Max.   :30.000   Max.   :56.038   Max.   :56.038
 
 #plot
 MN_VHT_calculator %>%
@@ -306,8 +304,8 @@ case_summary <- MN_VHT_calculator %>%
 cat("Distribution of cases:\n")
 print(case_summary)
 
-#No suitable habitat (VHT = 0)      5143
-#Suitable habitat exists (VHT > 0) 14320
+#No suitable habitat (VHT = 0)      6672
+#Suitable habitat exists (VHT > 0) 20221
 
 # Check that VHT = o2_depth - temp_depth (should be TRUE for all rows)
 VHT_check <- MN_VHT_calculator %>%
@@ -377,7 +375,7 @@ weird_o2 <- MN_VHT_calculator %>%
   distinct()
 print(head(weird_o2))
 
-###look into lake 531?
+###look into lake 780 and 531
 
 # Check for extreme VHT values
 cat("Profiles with VHT > 65m (potential outliers):\n")
@@ -488,13 +486,13 @@ zero_counts_all <- MN_VHT_calculator %>%
 
 print(zero_counts_all)
 
-#3         217
-#4          16
-#5         136
-#6        5437
-#7       30162
-#8       30378
-#9        4938
+#3         221
+#4          43
+#5         153
+#6        6097
+#7       34029
+#8       34889
+#9        5454
 #10         268
 
 
@@ -640,8 +638,8 @@ for (cat in categories) {
   print(p)
   
   # Save to desktop
-  ggsave(filename = paste0("~/Desktop/", custom_title, "_Ribbon_Plot.png"), 
-         plot = p, width = 10, height = 6, dpi = 300)
+  #ggsave(filename = paste0("~/Desktop/", custom_title, "_Ribbon_Plot.png"), 
+         #plot = p, width = 10, height = 6, dpi = 300)
 }
 
 
@@ -895,11 +893,11 @@ VHT_JA <- MN_VHT_summary %>%
 
 #histogram
 ggplot(VHT_JA, aes(x = JA_VHT)) +
-  geom_histogram(bins = 20, fill = "steelblue", color = "white") +
+  geom_histogram(bins = 10, fill = "steelblue", color = "white") +
   theme_minimal()
 
 ggplot(VHT_JA, aes(x = normalized_JA_VHT)) +
-  geom_histogram(bins = 20, fill = "steelblue", color = "white") +
+  geom_histogram(bins = 10, fill = "steelblue", color = "white") +
   theme_minimal()
 
 #look at map plot normalized
@@ -1014,11 +1012,11 @@ ConcurrentPreseason_Model_insert <- inner_join(
 )
 
 #checks
-setdiff(unique_lakeIDs$lagoslakeid, Model_insert$lagoslakeid) #3548
+setdiff(unique_lakeIDs$lagoslakeid, Model_insert$lagoslakeid) 
 
-uniqueN(Model_insert$lagoslakeid) #151
+uniqueN(Model_insert$lagoslakeid) #452
 
-uniqueN(unique_lakeIDs$lagoslakeid) #152
+uniqueN(unique_lakeIDs$lagoslakeid) #463
 
 #save
 write.csv(Model_insert, file = "~/Desktop/Model_insert.csv", row.names = FALSE)
