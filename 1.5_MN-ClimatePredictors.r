@@ -18,7 +18,7 @@ library(sf)
 
 # Calculate Climate Index Predictors -----------------------------------------------------------------------------------------
 
-#PAR, surface wind speed, air temp, precip, ENSO, PDO, NAM, geopotential height 500
+#PAR, surface wind speed, ENSO, PDO, NAM
 
 #PDO index ----
 PDO_index <- read.table("~/Desktop/Research/Data/Climate Index Data/PDO_index.txt", header = TRUE, sep = "", dec = ".")
@@ -217,9 +217,7 @@ preseason_predictors <- preseason_predictors %>%
 
 concurrent_climate <- MN_seasonalclimate %>%
   select(latitude, longitude, year,
-         ttr_august, ttr_ja,
-         tsr_august, tsr_ja,
-         windspeed_august, windspeed_ja)
+         ttr_ja,tsr_ja,windspeed_ja)
 
 # Merge with lake IDs
 concurrent_climate_lakes <- unique_lakeIDs %>%
@@ -232,7 +230,7 @@ concurrent_predictors <- concurrent_predictors %>%
   left_join(concurrent_climate_lakes %>% select(-grid_lat, -grid_lon),
             by = c("lagoslakeid" = "lagoslakeid", "year" = "year"))
 
-#any naans?
+#any naans? 0
 #see which columns they are mostly in: 
 sapply(preseason_predictors, function(x) sum(is.nan(x)))
 

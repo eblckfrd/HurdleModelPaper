@@ -46,6 +46,8 @@ chemistry_limno <- read.csv("~/Documents/R Repositories/Ch2_DataAnalysis/chemist
 # Only keep columns that are needed
 # Filter for only lakes that stratify-- filter for geom ratio <4 (ratio already calculated in profiles dataset)
 
+uniqueN(FULL_MN_profiles$link_lagosid) #3397 lakes
+
 MN_profiles <- FULL_MN_profiles %>% #takes data down to 714,410 and 19 variables
   dplyr::select(link_lagosid, year, date, doy, latitude, longitude, 
                 monitoringlocationidentifier, monitoringlocationname,
@@ -54,7 +56,7 @@ MN_profiles <- FULL_MN_profiles %>% #takes data down to 714,410 and 19 variables
                 flag_do, flag_temp, flag_dep_diff) %>%
   filter(lake_geomratio <= "4") 
 
-uniqueN(FULL_MN_profiles$link_lagosid) #3397 lakes
+uniqueN(MN_profiles$link_lagosid) #1817 lakes
 
 #rename just so i can run the borrowed code from Mike below
 MN_profiles <- MN_profiles %>%
@@ -467,59 +469,6 @@ MN_selected_profiles <- MN_profiles_final %>%
 
 #check that this worked; it did! 
 n_distinct(MN_selected_profiles$link_lagosid) #467
-
-
-####ignore this, ended up not being an issue with random forest models, they allow for non-consecutive samples as long as predictor years match --------
-
-# #do I need only lakes that have consecutive sampling?
-# lake_years <- MN_selected_profiles %>%
-#   distinct(link_lagosid, year) %>%
-#   arrange(link_lagosid, year)
-# 
-# #sort
-# lakes_with_consec_10ish <- lake_years %>%
-#   group_by(link_lagosid) %>%
-#   summarise(sample_years = list(sort(unique(year))), .groups = "drop") %>%
-#   rowwise() %>%
-#   mutate(has_consec_block = {
-#     years <- sample_years
-#     found <- FALSE
-#     if (length(years) >= 10) {
-#       for (i in 1:(length(years) - 9)) {
-#         window <- years[i:(i + 9)]
-#         if (max(window) - min(window) <= 13) {  # Allow up to 1–2 year gaps
-#           found <- TRUE
-#           break
-#         }
-#       }
-#     }
-#     found
-#   }) %>%
-#   filter(has_consec_block) %>%
-#   select(link_lagosid)
-# 
-# #see all streaks
-# lake_streaks <- lake_years %>%
-#   group_by(link_lagosid) %>%
-#   mutate(streak_id = year - row_number()) %>%
-#   group_by(link_lagosid, streak_id) %>%
-#   summarise(
-#     streak_length = n(),
-#     min_year = min(year),
-#     max_year = max(year),
-#     .groups = "drop"
-#   )
-# 
-# #identify the longest streak for each year
-# longest_streaks <- lake_streaks %>%
-#   group_by(link_lagosid) %>%
-#   slice_max(order_by = streak_length, n = 1, with_ties = FALSE) %>%
-#   ungroup()
-# 
-# #histogram
-# ggplot(data = longest_streaks, aes(x = streak_length)) +
-#   geom_histogram(binwidth = 2, fill = "blue", color = "black", alpha = 0.7) +
-#   theme_minimal()
 
 
 # Analysis on rainfall and temp Mesonet data to define north and south regions: SUMMER AVERAGE JJA ----------------------------------------------------
