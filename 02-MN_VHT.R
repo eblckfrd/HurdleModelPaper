@@ -472,6 +472,84 @@ MN_VHT_calculator %>%
     axis.title.y = element_text(size = 14, face = "bold")  # Make y-axis title bigger and bold
   )
 
+#split into North and South on same plot
+
+MN_VHT_calculator %>%
+  filter(!is.na(VHT), VHT <= 25) %>%
+  distinct(link_lagosid, date, .keep_all = TRUE) %>%
+  left_join(unique_lakeIDs %>% select(lagoslakeid, geo_position), 
+            by = c("link_lagosid" = "lagoslakeid")) %>%
+  filter(!is.na(geo_position)) %>%
+  mutate(
+    geo_position = factor(geo_position, levels = c("North", "South")),
+    month = factor(month, levels = 1:12, labels = month.abb)
+  ) %>%
+  ggplot(aes(x = month, y = VHT, fill = geo_position, color = geo_position)) +
+  
+  geom_jitter(
+    aes(color = geo_position),
+    alpha = 0.15, size = 0.6,
+    position = position_jitterdodge(jitter.width = 0.15, dodge.width = 0.8)
+  ) +
+  
+  geom_boxplot(
+    alpha = 0.65, outlier.shape = NA, width = 0.6,
+    position = position_dodge(0.8),
+    linewidth = 0.45
+  ) +
+  
+  # Navy for North, true blue for South (no grey)
+  scale_fill_manual(
+    values = c("North" = "#1B3A6B", "South" = "#5B9BD5"),
+    labels = c("North" = "Northern Lakes", "South" = "Southern Lakes")
+  ) +
+  scale_color_manual(
+    values = c("North" = "#0D1F3C", "South" = "#2E75B6"),
+    labels = c("North" = "Northern Lakes", "South" = "Southern Lakes")
+  ) +
+  
+  scale_y_continuous(
+    limits = c(0, 25),
+    breaks = seq(0, 25, by = 5),
+    expand = expansion(mult = c(0, 0.02))
+  ) +
+  
+  labs(
+    x     = NULL,
+    y     = "Vertical Habitat Thickness (m)",
+    fill  = NULL,
+    color = NULL
+  ) +
+  
+  theme_classic(base_size = 15) +
+  theme(
+    # No title/subtitle
+    plot.margin = margin(12, 16, 8, 12),
+    
+    # Legend — boxed, bottom right
+    legend.position      = c(0.98, 0.98),   # top-right inside panel
+    legend.justification = c("right", "top"),
+    legend.background    = element_rect(fill = "white", color = "grey70", linewidth = 0.4),
+    legend.margin        = margin(6, 10, 6, 10),
+    legend.text          = element_text(size = 14),
+    legend.key.size      = unit(0.9, "cm"),
+    legend.spacing.y     = unit(0.2, "cm"),
+    
+    # Axes — all bigger
+    axis.text.x  = element_text(size = 14, color = "black"),
+    axis.text.y  = element_text(size = 14, color = "black"),
+    axis.title.y = element_text(size = 15, face = "bold", margin = margin(r = 10)),
+    axis.line    = element_line(color = "black", linewidth = 0.4),
+    axis.ticks   = element_line(color = "black", linewidth = 0.4),
+    
+    # Subtle horizontal grid only
+    panel.grid.major.y = element_line(color = "grey88", linewidth = 0.3),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor   = element_blank()
+  )
+
+ggsave("VHT_seasonal_patterns.png", 
+       width = 10, height = 6, dpi = 300, bg = "white")
 
 #add all categories into dataset I am using to plot
 MN_VHT_calculator <- MN_VHT_calculator %>%
@@ -1023,4 +1101,5 @@ uniqueN(unique_lakeIDs$lagoslakeid) #463
 write.csv(Model_insert, file = "~/Desktop/Model_insert.csv", row.names = FALSE)
 
 write.csv(ConcurrentPreseason_Model_insert, file = "~/Desktop/ConcurrentPreseason_Model_insert.csv", row.names = FALSE)
+
 
